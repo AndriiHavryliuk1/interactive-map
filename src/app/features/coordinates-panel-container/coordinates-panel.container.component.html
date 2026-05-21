@@ -1,0 +1,62 @@
+<aside class="panel" [class.is-collapsed]="collapsed()">
+  <header class="header">
+    <button
+      type="button"
+      class="toggle"
+      (click)="onToggleClick()"
+      [attr.aria-label]="toggleLabel()"
+      [attr.aria-expanded]="!collapsed()"
+    >
+      <svg
+        class="chevron"
+        [class.is-flipped]="collapsed()"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2.5"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        aria-hidden="true"
+      >
+        <polyline points="15 18 9 12 15 6" />
+      </svg>
+    </button>
+
+    @if (!collapsed()) {
+      <div class="title-group">
+        <h2>Сигнал</h2>
+        @if (currentBurst().length > 1) {
+          <span
+            class="burst-badge"
+            [attr.title]="currentBurst().length + ' сигналів одночасно'"
+          >×{{ currentBurst().length }}</span>
+        }
+      </div>
+      <span class="mode" [attr.data-mode]="mode()">{{ modeLabel() }}</span>
+    }
+  </header>
+
+  @if (!collapsed()) {
+    <div class="signal-list">
+      @if (currentBurst().length > 0) {
+        @for (radarSignal of currentBurst(); track radarSignal.id; let i = $index) {
+          <app-coordinates-panel
+            [radarSignal]="radarSignal"
+            [index]="i + 1"
+            [total]="currentBurst().length"
+          />
+        }
+      } @else {
+        <p class="empty">
+          На цьому моменті часу сигналів немає.<br />
+          Перетягніть точку прогресу, щоб знайти інший момент.
+        </p>
+      }
+    </div>
+
+    <footer class="footer">
+      <span>Видимих зараз: {{ visibleCount() }}</span>
+      <span>{{ cursor() | date: timeFormat }}</span>
+    </footer>
+  }
+</aside>

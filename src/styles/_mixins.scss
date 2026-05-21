@@ -1,0 +1,98 @@
+// =====================================================================
+// Reusable style patterns. Mixins inline at compile time, so they share
+// the design system's vocabulary without bloating runtime CSS.
+//
+// Convention: every mixin emits CSS that references `var(--token)`, so
+// rebranding the app only requires editing _tokens.scss.
+// =====================================================================
+
+// ---- panels -----------------------------------------------------------
+
+/// A baseline panel surface: dark elevated background, system font,
+/// boxed sizing, with the caller free to override individual properties.
+@mixin panel-surface {
+  background: var(--color-surface);
+  color: var(--color-text-default);
+  font-family: var(--font-family-sans);
+  box-sizing: border-box;
+}
+
+/// A small interactive surface used for individual rows / chips inside
+/// a panel — one elevation step up from the panel itself.
+@mixin elevated-row {
+  background: var(--color-surface-elevated);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-3);
+}
+
+// ---- typography -------------------------------------------------------
+
+/// "Eyebrow" label: small, uppercase, wide-tracked, muted. Used for
+/// section headers, `dt` labels, and small badges.
+@mixin eyebrow($size: var(--font-size-xs)) {
+  font-size: $size;
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: var(--letter-spacing-wide);
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+/// Tabular numerals — keeps digit width constant so changing timestamps
+/// don't make the layout jitter.
+@mixin tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+// ---- controls ---------------------------------------------------------
+
+/// Strip browser-default button chrome before applying our own.
+@mixin button-reset {
+  appearance: none;
+  border: none;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+/// Round button — used for the transport play/pause control.
+/// Caller provides background and text color via tokens.
+@mixin circular-button($size: 2.75rem) {
+  @include button-reset;
+  width: $size;
+  height: $size;
+  border-radius: var(--radius-full);
+  font-weight: var(--font-weight-bold);
+  transition: transform var(--transition-fast), background var(--transition-fast);
+
+  &:active {
+    transform: scale(0.95);
+  }
+}
+
+/// Pill-shaped chip with hover affordance — the "LIVE" button and the
+/// mode-status badge both lean on this.
+@mixin pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-pill);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: var(--letter-spacing-wide);
+  transition: background var(--transition-fast),
+              border-color var(--transition-fast),
+              color var(--transition-fast);
+}
+
+// ---- focus ------------------------------------------------------------
+
+/// Accessible focus ring — applied via `:focus-visible` so it never
+/// appears for mouse users but stays for keyboard.
+@mixin focus-ring($color: var(--color-accent)) {
+  outline: 2px solid $color;
+  outline-offset: 4px;
+}

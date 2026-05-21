@@ -1,0 +1,33 @@
+<article class="card">
+  @if (total() > 1) {
+    <div class="burst-index">{{ index() }} / {{ total() }}</div>
+  }
+
+  <dl class="details">
+    <div class="row">
+      <dt>Час</dt>
+      <dd>{{ radarSignal().timestamp | date: datetimeFormat }}</dd>
+    </div>
+    <div class="row">
+      <dt>Частота</dt>
+      <dd>{{ radarSignal().frequency | number: frequencyFormat }} МГц</dd>
+    </div>
+    <div class="row">
+      <dt>Координати</dt>
+      <dd>
+        {{ radarSignal().point.lat | number: coordinateFormat }},
+        {{ radarSignal().point.lon | number: coordinateFormat }}
+      </dd>
+    </div>
+    <div class="row">
+      <dt>Зона</dt>
+      <dd>
+        @if (radarSignal().zone.length > 0) {
+          {{ radarSignal().zone.length | vertexCountLabel }}
+        } @else {
+          <em>немає</em>
+        }
+      </dd>
+    </div>
+  </dl>
+</article>

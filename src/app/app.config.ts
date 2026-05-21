@@ -1,11 +1,15 @@
-import { ApplicationConfig, provideBrowserGlobalErrorListeners } from '@angular/core';
-import { provideRouter } from '@angular/router';
+import {
+  ApplicationConfig,
+  provideBrowserGlobalErrorListeners,
+  provideZonelessChangeDetection,
+} from '@angular/core';
 
-import { routes } from './app.routes';
+import { provideWebSocketSignalGateway } from './core/gateway/provide-websocket-gateway';
 
 export const appConfig: ApplicationConfig = {
   providers: [
     provideBrowserGlobalErrorListeners(),
-    provideRouter(routes)
-  ]
+    provideZonelessChangeDetection(),
+    provideWebSocketSignalGateway(),
+  ],
 };

@@ -1,1 +1,20 @@
-/* You can add global styles to this file, and also import other style files */
+// Design tokens load exactly once, here. Components consume them via
+// `var(--token)` references — they MUST NOT @use 'tokens' themselves,
+// or we'd ship the :root block multiple times.
+@use 'tokens';
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  font-family: var(--font-family-sans);
+  background: var(--color-bg);
+  color: var(--color-text-default);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}

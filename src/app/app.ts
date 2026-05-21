@@ -1,12 +1,20 @@
-import { Component, signal } from '@angular/core';
-import { RouterOutlet } from '@angular/router';
+import { ChangeDetectionStrategy, Component, signal } from '@angular/core';
+
+import { ControlPanelComponent } from './features/controls/control-panel.component';
+import { CoordinatesPanelContainerComponent } from './features/coordinates-panel-container/coordinates-panel.container.component';
+import { MapComponent } from './features/map/map.component';
 
 @Component({
   selector: 'app-root',
-  imports: [RouterOutlet],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [MapComponent, ControlPanelComponent, CoordinatesPanelContainerComponent],
   templateUrl: './app.html',
-  styleUrl: './app.scss'
+  styleUrl: './app.scss',
 })
 export class App {
-  protected readonly title = signal('interactive-map');
+  protected readonly sidebarCollapsed = signal(false);
+
+  protected toggleSidebar(): void {
+    this.sidebarCollapsed.update((v) => !v);
+  }
 }

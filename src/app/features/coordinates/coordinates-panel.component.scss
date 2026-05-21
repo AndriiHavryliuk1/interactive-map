@@ -1,0 +1,49 @@
+@use 'mixins' as m;
+
+:host {
+  display: block;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  padding: var(--space-3) 0;
+
+  & + .card {
+    border-top: 1px solid var(--color-border);
+  }
+}
+
+.burst-index {
+  @include m.eyebrow;
+  color: var(--color-accent);
+}
+
+.details {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.row {
+  @include m.elevated-row;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+
+  dt { @include m.eyebrow; margin: 0; }
+
+  dd {
+    @include m.tabular-nums;
+    margin: 0;
+    font-size: var(--font-size-xl);
+    color: var(--color-text-primary);
+
+    em {
+      color: var(--color-text-subtle);
+      font-style: italic;
+    }
+  }
+}

@@ -1,0 +1,55 @@
+:host {
+  display: block;
+  width: 100%;
+  height: 100vh;
+  background: var(--color-bg);
+  color: var(--color-text-default);
+}
+
+.shell {
+  --sidebar-width: 320px;
+
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100vh;
+
+  &.is-collapsed {
+    --sidebar-width: 56px;
+  }
+}
+
+.main {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+.sidebar {
+  width: var(--sidebar-width);
+  flex-shrink: 0;
+  min-height: 0;
+  transition: width 200ms ease;
+}
+
+.map {
+  flex: 1;
+  position: relative;
+  min-height: 0;
+}
+
+.controls {
+  flex: 0 0 auto;
+}
+
+@media (max-width: 720px) {
+  .main {
+    flex-direction: column;
+  }
+
+  .sidebar {
+    width: 100%;
+    max-height: 40vh;
+    overflow: auto;
+  }
+}

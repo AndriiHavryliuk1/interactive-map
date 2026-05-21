@@ -1,0 +1,46 @@
+<div class="panel">
+  <button
+    type="button"
+    class="transport"
+    [class.is-playing]="isPlaying()"
+    (click)="toggleTransport()"
+    [attr.aria-label]="isPlaying() ? 'Pause' : 'Play'"
+  >
+    {{ isPlaying() ? '❚❚' : '▶' }}
+  </button>
+
+  <div class="timeline">
+    <div #track class="track" (pointerdown)="onTrackPointerDown($event)">
+      <div class="track-fill" [style.width.%]="cursorPercent()"></div>
+
+      <div
+        class="scrubber"
+        [style.left.%]="cursorPercent()"
+        [class.is-dragging]="isDragging()"
+        role="slider"
+        tabindex="0"
+        [attr.aria-valuemin]="windowStart()"
+        [attr.aria-valuemax]="windowEnd()"
+        [attr.aria-valuenow]="cursor()"
+        [attr.aria-valuetext]="cursorLabel()"
+      ></div>
+    </div>
+
+    <div class="ticks">
+      <span>{{ windowStart() | date: tickTimeFormat }}</span>
+      <span class="current">{{ cursorLabel() }}</span>
+      <span>{{ windowEnd() | date: tickTimeFormat }}</span>
+    </div>
+  </div>
+
+  <button
+    type="button"
+    class="live"
+    [class.is-live]="isLive()"
+    (click)="goLive()"
+    aria-label="Jump to live"
+  >
+    <span class="live-dot" aria-hidden="true"></span>
+    LIVE
+  </button>
+</div>
