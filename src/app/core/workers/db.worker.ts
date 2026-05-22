@@ -9,11 +9,13 @@ import { PlaybackMode } from '../../shared/models/playback.model';
 let db: IDBDatabase | null = null;
 let networkPort: MessagePort | null = null;
 let dbReady = false;
+let disposed = false;
 
 // State Machine
 let mode: PlaybackMode = 'live';
 let cursorOverride: number | null = null;
 let clockHandle: ReturnType<typeof setInterval> | null = null;
+let batchHandle: ReturnType<typeof setInterval> | null = null;
 
 // Batching buffer
 let buffer: RadarSignal[] = [];
@@ -32,6 +34,9 @@ addEventListener('message', (event: MessageEvent<ControlCommand>) => {
   if (command.type === 'INIT_PORTS' && event.ports.length > 0) {
     networkPort = event.ports[0];
     networkPort.onmessage = (e) => handleNetworkMessage(e.data);
+  } else if (command.type === 'DISPOSE') {
+    disposed = true;
+    cleanup();
   } else if (command.type === 'PLAY') {
     if (mode === 'live') cursorOverride = Date.now();
     mode = 'playing';
@@ -47,7 +52,27 @@ addEventListener('message', (event: MessageEvent<ControlCommand>) => {
   }
 });
 
+function cleanup(): void {
+  if (clockHandle) {
+    clearInterval(clockHandle);
+    clockHandle = null;
+  }
+  if (batchHandle) {
+    clearInterval(batchHandle);
+    batchHandle = null;
+  }
+  if (db) {
+    db.close();
+    db = null;
+  }
+  if (networkPort) {
+    networkPort.close();
+    networkPort = null;
+  }
+}
+
 function handleNetworkMessage(data: any): void {
+  if (disposed) return;
   if (data.type === 'NEW_SIGNAL') {
     const msg = data.payload as SignalMessage;
     const signal: RadarSignal = {
@@ -62,7 +87,7 @@ function handleNetworkMessage(data: any): void {
 }
 
 function startBatchWriter(): void {
-  setInterval(() => {
+  batchHandle = setInterval(() => {
     if (buffer.length > 0 && dbReady && db) {
       const toSave = [...buffer];
       buffer = [];
@@ -70,6 +95,8 @@ function startBatchWriter(): void {
     }
   }, BATCH_INTERVAL_MS);
 }
+
+let lastVisibleIds = new Set<string>();
 
 function startEngine(): void {
   clockHandle = setInterval(async () => {
@@ -96,6 +123,12 @@ function startEngine(): void {
       
       const visibleSignals = signals.filter(s => s.timestamp >= cursor - SIGNAL_VISIBLE_DURATION_MS && s.timestamp <= cursor);
       
+      const currentIds = new Set(visibleSignals.map(s => s.id));
+      const addedSignals = visibleSignals.filter(s => !lastVisibleIds.has(s.id));
+      const removedSignalIds = Array.from(lastVisibleIds).filter(id => !currentIds.has(id));
+      
+      lastVisibleIds = currentIds;
+
       // Calculate burst (simplified for worker: exact timestamp match of closest)
       let burstAtCursor: RadarSignal[] = [];
       if (signals.length > 0) {
@@ -117,7 +150,10 @@ function startEngine(): void {
       const frame: StateFrame = {
         mode,
         cursor,
+        now,
         visibleSignals,
+        addedSignals,
+        removedSignalIds,
         burstAtCursor
       };
       
