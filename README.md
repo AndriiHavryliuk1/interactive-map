@@ -47,9 +47,9 @@ Three views are stitched together by a single root component:
 |------------------|---------------------------------------------------------|
 | Framework        | Angular 21 (standalone components, zoneless CD)         |
 | State            | Signals (`signal`, `computed`, `effect`) — UI surface   |
-| Cross-boundary   | RxJS Observables — WebSocket transport only             |
-| Map              | Leaflet 1.9 + OpenStreetMap tiles                       |
-| Test runner      | Vitest 4                                                |
+| Cross-boundary   | Web Workers + postMessage (Delta Sync)                  |
+| Map              | Leaflet 1.9 + Canvas Rendering API                      |
+| Storage          | IndexedDB (`idb`)                                       |
 | Live signal feed | Local Node.js `ws` server (`server/index.js`)           |
 | Styling          | SCSS with CSS-variable tokens + reusable mixins         |
 
@@ -83,12 +83,6 @@ npm run serve    # Angular dev server only (ng serve)
 npm run build    # output in ./dist
 ```
 
-### Testing
-
-```bash
-npm test         # runs Vitest
-```
-
 ### Override the WebSocket port
 
 ```bash
@@ -103,8 +97,8 @@ PORT=9000 npm run server
 
 ### Map (right / centre)
 
-- **Markers** — every signal whose timestamp is in the trailing 30-second
-  window from the cursor.
+- **Markers** — every signal whose timestamp is in the trailing 1-second
+  window from the cursor. Rendered via HTML5 Canvas for performance.
 - **Polygons** — drawn only when the signal carries a non-empty `zone`.
 - **Popup** — clicking a marker shows its frequency, lat/lon, and ISO
   timestamp.
@@ -132,16 +126,16 @@ PORT=9000 npm run server
 - **Scrubber** — drag the white dot along the track to any timestamp in the
   last 12 hours. The leftmost position is `now − 12h`, the rightmost is
   `now`. Both the map and the coordinates panel update continuously during
-  the drag (not only on release).
+  the drag.
 - **LIVE** — snaps the cursor back to `now` and resumes live updates. The
   red dot pulses while LIVE is engaged.
 
 ### Playback semantics
 
-- **LIVE** — cursor follows the wall clock; map shows the last 30s of
+- **LIVE** — cursor follows the wall clock; map shows the last 1s of
   activity; panel shows the burst closest to "now".
 - **PAUSED** — cursor frozen at user-selected moment; map shows the
-  preceding 30s; panel shows the burst nearest the cursor (within 30s).
+  preceding 1s; panel shows the burst nearest the cursor (within 30s).
 - **PLAYING** — cursor walks forward at 1× real-time (100 ms per tick) from
   its current position. When it catches up to the wall clock it
   auto-transitions to LIVE.
@@ -161,25 +155,43 @@ PORT=9000 npm run server
                                  │
                                  ▼ JSON SignalMessage
                    ┌────────────────────────────────┐
-                   │ WebSocketSignalGateway         │
-                   │ (Observable<SignalMessage>)    │
-                   └────────────────────────────────┘
+                   │ NetworkWorker (Web Worker)     │
+                   │ WebSocket + DB.put(signal)     │
+                   └─────────────┬──────────────────┘
+                                 │ Write-Through
+                                 ▼
+                   ┌────────────────────────────────┐
+                   │ IndexedDB (Storage)            │
+                   │ signal_history store           │
+                   └─────────────▲──────────────────┘
+                                 │ Read/Query
+                   ┌─────────────┴──────────────────┐
+                   │ DBWorker (Web Worker)          │
+                   │ Computes timeline window       │
+                   │ Calculates Deltas (add/remove) │
+                   └─────────────┬──────────────────┘
                                  │
-                                 ▼ via SIGNAL_GATEWAY token
+                                 ▼ StateFrame (Deltas via postMessage)
                    ┌────────────────────────────────┐
                    │ SignalStore                    │
-                   │ Observable → Signal boundary   │
-                   │  • time-sorted RadarSignal[]   │
-                   │  • cursor / mode state machine │
-                   │  • derived Signals (computed)  │
-                   └────────────────────────────────┘
+                   │ Applies Deltas to State        │
+                   │ Derived Signals (computed)     │
+                   └─────────────┬──────────────────┘
                                  │
                                  ▼ readonly Signals
               ┌──────────────────┼────────────────────┐
               ▼                  ▼                    ▼
        MapComponent     CoordinatesPanel       ControlPanel
-       (Leaflet diff)   Container (cards)      (transport UI)
+       (Canvas + rAF)   Container (cards)      (transport UI)
 ```
+
+### Multi-Worker Architecture
+
+To guarantee a stable 60 FPS under load (up to 5,000 active markers, 100,000+ in history), the application delegates heavy processing to Web Workers:
+
+- **NetworkWorker:** Owns the WebSocket connection. Its sole responsibility is writing incoming JSON payloads directly to IndexedDB.
+- **DBWorker:** The engine room. Every 100ms, it queries IndexedDB based on the current timeline cursor, calculates a "Delta" (which signals were added, which IDs were removed), and sends this minimal payload to the main thread.
+- **Main Thread (UI):** Only handles rendering and applying pre-calculated state diffs. Map updates are throttled using `requestAnimationFrame` to ensure Leaflet renders only during browser paint cycles.
 
 ### State machine
 
@@ -189,35 +201,17 @@ PORT=9000 npm run server
 |------------------|-----------------------------------------------|--------------------------------------------------------------|
 | live → paused    | Pause button while in LIVE                    | Captures `_now()` into `_cursorOverride`                     |
 | live → paused    | Scrubber drag while in LIVE                   | Same — drag pauses automatically                             |
-| paused → playing | Play button                                   | Starts a 100 ms `effect`-scoped interval that advances cursor|
-| playing → live   | Cursor catches up to `_now()`                 | Auto-snap; effect cleanup kills the interval                 |
+| paused → playing | Play button                                   | Starts a 100 ms interval inside DBWorker to advance cursor   |
+| playing → live   | Cursor catches up to `_now()`                 | Auto-snap; timeline syncs with wall clock                    |
 | any → live       | LIVE button                                   | Clears override; mode = 'live'                               |
-| any → paused     | Pause from playing                            | Cursor stays put; interval cleaned up                        |
+| any → paused     | Pause from playing                            | Cursor stays put; interval stops advancing                   |
 
 ### Key design choices
 
-- **Observable in, Signals out.** The gateway exposes RxJS (because that's
-  what a WebSocket subscription naturally is), but the store flips the
-  bridge once via `takeUntilDestroyed(...).subscribe(...)`. Every consumer
-  downstream reads pure signals — no RxJS lifecycle to worry about.
-- **Time-sorted array, not a Map.** Signals live in
-  `signal<readonly RadarSignal[]>` sorted ascending by timestamp. Queries
-  use binary search (`lowerBound` in `shared/utils/utils.ts`), so
-  `visibleSignals` is `O(log n + windowSize)` and `burstAtCursor` is
-  `O(log n + burstSize)`. Inserts preserve order via the same binary
-  search.
-- **Mode-scoped playback timer.** The 100 ms playback interval lives inside
-  an `effect((onCleanup) => …)`. When `mode` changes, the effect re-runs
-  and the cleanup callback kills the interval. No `if (mode !== 'playing')
-  return;` no-ops on every tick.
-- **Strict-timestamp burst grouping.** The coordinates panel groups by
-  exact equality on `timestamp`, not by a fuzzy ±N-ms window. This is why
-  the server hands one `timestamp` to every signal in a burst — so the
-  client can faithfully report "N одночасно".
-- **Templates never see the store directly.** Every component keeps its
-  injected store `private` and re-exposes only the signals/methods it
-  needs as `protected` members. This keeps the template-to-state surface
-  explicit and refactor-friendly.
+- **Delta Sync:** The DBWorker tracks which signal IDs were sent in the last frame and only sends `addedSignals` and `removedSignalIds`. This reduces `postMessage` serialization overhead from O(N) to O(Δ).
+- **Time-Decoupled Map Rendering:** The MapComponent uses `requestAnimationFrame` to decouple Leaflet layer updates from the DBWorker's state stream. The map applies whatever the latest state is on the next screen repaint, avoiding UI thread saturation.
+- **IndexedDB Write-Through:** To keep the main thread pristine, the NetworkWorker writes directly to IndexedDB. The DBWorker reads from IndexedDB. The main thread never touches the database.
+- **Mode-scoped playback timer.** The 100 ms playback interval is driven by `setInterval` within the `DBWorker`. The UI merely sends playback commands (`PLAY`, `PAUSE`, `SEEK`) via `postMessage`.
 
 ---
 
@@ -232,19 +226,20 @@ PORT=9000 npm run server
     │   ├── app.config.ts           DI providers (zoneless CD + gateway)
     │   ├── app.ts                  Root shell: map + sidebar + controls
     │   ├── core/
+    │   │   ├── db/
+    │   │   │   └── indexed-db.util.ts       IndexedDB wrapper for workers
     │   │   ├── gateway/
     │   │   │   ├── gateway.constants.ts     WS URL, reconnect delays
-    │   │   │   ├── provide-websocket-gateway.ts
-    │   │   │   ├── random-signal.factory.ts Synthetic history generator
-    │   │   │   ├── signal-gateway.ts        SignalGateway interface + token
-    │   │   │   └── websocket-signal.gateway.ts  Real WebSocket impl
-    │   │   └── state/
-    │   │       └── signal-store.ts          Central state machine
+    │   │   ├── state/
+    │   │   │   └── signal-store.ts          Central state machine
+    │   │   └── workers/
+    │   │       ├── db.worker.ts             Reads IDB, calcs deltas, handles playback
+    │   │       └── network.worker.ts        WS connection, writes to IDB
     │   ├── features/
     │   │   ├── controls/                    Play/pause/scrubber/LIVE
     │   │   ├── coordinates/                 Dumb single-signal card
     │   │   ├── coordinates-panel-container/ Smart wrapper for the sidebar
-    │   │   └── map/                         Leaflet canvas + layer diff
+    │   │   └── map/                         Leaflet canvas + rAF layer diff
     │   └── shared/
     │       ├── constants/
     │       │   ├── map-styles.constant.ts   Leaflet PathOptions presets
@@ -253,6 +248,7 @@ PORT=9000 npm run server
     │       │   ├── geo.model.ts             GeoPoint
     │       │   ├── playback.model.ts        PlaybackMode union
     │       │   └── signal.model.ts          SignalMessage / RadarSignal
+    │       │   └── worker.model.ts          Message payloads (Commands & StateFrames)
     │       ├── pipes/
     │       │   └── vertex-count-label.pipe.ts  Ukrainian plural for "вершин"
     │       └── utils/
@@ -262,15 +258,6 @@ PORT=9000 npm run server
         ├── _tokens.scss              CSS-variable design tokens
         └── styles.scss               Global resets + token registration
 ```
-
-### Layer rules
-
-- `core/` — singletons providing data (gateway) and state (store). May
-  depend on `shared/`.
-- `features/` — UI. May depend on `core/` and `shared/`. Features never
-  depend on each other.
-- `shared/` — pure types, constants, utils. No Angular-specific runtime
-  (besides pipes). Never depends on `core/` or `features/`.
 
 ---
 
@@ -306,7 +293,7 @@ in the burst shares the same `timestamp`.
 ### Client reconnection
 
 On `close` (which fires after `error` for failed connections too), the
-gateway schedules a reconnect with exponential backoff starting at 500 ms
+`network.worker.ts` schedules a reconnect with exponential backoff starting at 500 ms
 and capped at 10 s.
 
 ---
@@ -321,6 +308,4 @@ and capped at 10 s.
 | Trailing visibility window | `shared/constants/time.constants.ts` (`SIGNAL_VISIBLE_DURATION_MS`) |
 | Playback tick rate         | `shared/constants/time.constants.ts` (`PLAYBACK_TICK_MS`) |
 | Map default centre & zoom  | `features/map/map.component.ts` (`initLeaflet`)   |
-| Emitter centres + frequency range | `core/gateway/random-signal.factory.ts`    |
-| Server tick rate + burst distribution | `server/index.js`                      |
 | Design tokens              | `src/styles/_tokens.scss`                         |
