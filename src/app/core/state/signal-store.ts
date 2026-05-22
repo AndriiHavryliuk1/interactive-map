@@ -7,9 +7,16 @@ import {
 } from '@angular/core';
 
 import { HISTORY_WINDOW_MS } from '../../shared/constants/time.constants';
+import { LogSource } from '../../shared/constants/log-source.constant';
+import { Logger } from '../../shared/utils/logger';
 import { PlaybackMode } from '../../shared/models/playback.model';
 import { RadarSignal } from '../../shared/models/signal.model';
-import { StateFrame, ControlCommand } from '../../shared/models/worker.model';
+import { ControlCommand, StateFrame } from '../../shared/models/worker.model';
+import {
+  ControlMessageType,
+  FrameMessageType,
+  WORKER_TERMINATE_GRACE_MS,
+} from '../../shared/constants/worker.constants';
 
 @Injectable({ providedIn: 'root' })
 export class SignalStore implements OnDestroy {
@@ -19,87 +26,106 @@ export class SignalStore implements OnDestroy {
   private readonly _visibleSignalsMap = new Map<string, RadarSignal>();
   private readonly _visibleSignals = signal<readonly RadarSignal[]>([]);
   private readonly _burstAtCursor = signal<readonly RadarSignal[]>([]);
-  
-  private networkWorker: Worker;
-  private dbWorker: Worker;
+
+  private readonly logger = new Logger(LogSource.SignalStore);
+  private readonly networkWorker: Worker;
+  private readonly dbWorker: Worker;
 
   readonly mode: Signal<PlaybackMode> = this._mode.asReadonly();
   readonly cursor: Signal<number> = this._cursor.asReadonly();
   readonly visibleSignals: Signal<readonly RadarSignal[]> = this._visibleSignals.asReadonly();
   readonly burstAtCursor: Signal<readonly RadarSignal[]> = this._burstAtCursor.asReadonly();
-  
+
   readonly windowStart = computed(() => this._now() - HISTORY_WINDOW_MS);
   readonly windowEnd = this._now.asReadonly();
 
   constructor() {
-    this.networkWorker = new Worker(new URL('../workers/network.worker.ts', import.meta.url), { type: 'module' });
-    this.dbWorker = new Worker(new URL('../workers/db.worker.ts', import.meta.url), { type: 'module' });
+    // NOTE for refactors: construction order is load-bearing. signal-store.spec.ts
+    // disambiguates the two Worker mocks by the order of these two `new Worker`
+    // calls (the bundled URL no longer contains the original filename).
+    // Flipping these two lines silently inverts every assertion in that spec.
+    this.networkWorker = new Worker(
+      new URL('../workers/network.worker.ts', import.meta.url),
+      { type: 'module' },
+    );
+    this.dbWorker = new Worker(
+      new URL('../workers/db.worker.ts', import.meta.url),
+      { type: 'module' },
+    );
 
-    this.networkWorker.onerror = (e) => console.error('Network Worker error:', e);
-    this.dbWorker.onerror = (e) => console.error('DB Worker error:', e);
+    this.networkWorker.onerror = (e) => this.logger.error('NetworkWorker error', e);
+    this.dbWorker.onerror = (e) => this.logger.error('DBWorker error', e);
 
     const channel = new MessageChannel();
 
-    this.networkWorker.postMessage({ type: 'INIT_PORTS', port: channel.port1 } as ControlCommand, [channel.port1]);
-    this.dbWorker.postMessage({ type: 'INIT_PORTS', port: channel.port2 } as ControlCommand, [channel.port2]);
+    this.networkWorker.postMessage(
+      { type: ControlMessageType.InitPorts, port: channel.port1 } as ControlCommand,
+      [channel.port1],
+    );
+    this.dbWorker.postMessage(
+      { type: ControlMessageType.InitPorts, port: channel.port2 } as ControlCommand,
+      [channel.port2],
+    );
 
-    this.dbWorker.onmessage = (event: MessageEvent) => {
-      if (event.data?.type === 'FRAME') {
-        const frame = event.data.payload as StateFrame;
-        this._mode.set(frame.mode);
-        this._cursor.set(frame.cursor);
-        this._now.set(frame.now);
-        this._burstAtCursor.set(frame.burstAtCursor);
-
-        // Delta-based update of the visible signals map
-        let changed = false;
-        for (const id of frame.removedSignalIds) {
-          if (this._visibleSignalsMap.delete(id)) changed = true;
-        }
-        for (const signal of frame.addedSignals) {
-          this._visibleSignalsMap.set(signal.id, signal);
-          changed = true;
-        }
-
-        if (changed) {
-          this._visibleSignals.set(Array.from(this._visibleSignalsMap.values()));
-        }
-      }
-    };
+    this.dbWorker.onmessage = (event: MessageEvent) => this.onWorkerMessage(event);
   }
 
   ngOnDestroy(): void {
-    this.networkWorker.postMessage({ type: 'DISPOSE' });
-    this.dbWorker.postMessage({ type: 'DISPOSE' });
-    // Give them a moment to cleanup before hard terminate
+    this.networkWorker.postMessage({ type: ControlMessageType.Dispose });
+    this.dbWorker.postMessage({ type: ControlMessageType.Dispose });
     setTimeout(() => {
       this.networkWorker.terminate();
       this.dbWorker.terminate();
-    }, 50);
+    }, WORKER_TERMINATE_GRACE_MS);
   }
 
+  // Commands are pure forwarders — the worker is the single source of truth
+  // for mode/cursor. Optimistic local writes would dual-write state (with
+  // the worker's FRAME ~100ms later) and could flicker on auto-snap races
+  // (e.g. worker auto-snaps to live while user clicks Pause).
+  // The worker emits a FRAME synchronously after each command, so the
+  // round-trip is one event-loop tick — fast enough that buttons feel
+  // instant without local optimism.
+
   play(): void {
-    this._mode.set('playing');
-    this.sendCommand({ type: 'PLAY' });
+    this.sendCommand({ type: ControlMessageType.Play });
   }
 
   pause(): void {
-    this._mode.set('paused');
-    this.sendCommand({ type: 'PAUSE' });
+    this.sendCommand({ type: ControlMessageType.Pause });
   }
 
   goLive(): void {
-    this._mode.set('live');
-    this.sendCommand({ type: 'GO_LIVE' });
+    this.sendCommand({ type: ControlMessageType.GoLive });
   }
 
   seekTo(timestamp: number): void {
-    this._cursor.set(timestamp);
-    this._mode.set('paused');
-    this.sendCommand({ type: 'SEEK', timestamp });
+    this.sendCommand({ type: ControlMessageType.Seek, timestamp });
   }
-  
+
+  private onWorkerMessage(event: MessageEvent): void {
+    if (event.data?.type !== FrameMessageType.Frame) return;
+    const frame = event.data.payload as StateFrame;
+
+    this._mode.set(frame.mode);
+    this._cursor.set(frame.cursor);
+    this._now.set(frame.now);
+    this._burstAtCursor.set(frame.burstAtCursor);
+
+    let changed = false;
+    for (const id of frame.removedSignalIds) {
+      if (this._visibleSignalsMap.delete(id)) changed = true;
+    }
+    for (const radarSignal of frame.addedSignals) {
+      this._visibleSignalsMap.set(radarSignal.id, radarSignal);
+      changed = true;
+    }
+    if (changed) {
+      this._visibleSignals.set(Array.from(this._visibleSignalsMap.values()));
+    }
+  }
+
   private sendCommand(cmd: ControlCommand): void {
-     this.dbWorker.postMessage(cmd);
+    this.dbWorker.postMessage(cmd);
   }
 }

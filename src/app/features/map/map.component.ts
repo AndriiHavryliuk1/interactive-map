@@ -19,6 +19,8 @@ import {
 } from '../../shared/constants/number-formats.constant';
 import { SignalStore } from '../../core/state/signal-store';
 import { RadarSignal } from '../../shared/models/signal.model';
+import { LogSource } from '../../shared/constants/log-source.constant';
+import { Logger } from '../../shared/utils/logger';
 import { DatePipe } from '@angular/common';
 
 interface RenderedSignal {
@@ -38,6 +40,7 @@ export class MapComponent {
   private readonly destroyRef = inject(DestroyRef);
   private readonly datePipe = inject(DatePipe);
   private readonly mapHost = viewChild.required<ElementRef<HTMLDivElement>>('mapHost');
+  private readonly logger = new Logger(LogSource.MapComponent);
 
   private map: L.Map | null = null;
   private readonly mapReady = signal(false);
@@ -54,6 +57,7 @@ export class MapComponent {
       this.initLeaflet();
       this.mapReady.set(true);
       this.startRenderingLoop();
+      this.logger.info('Leaflet map ready');
 
       const resizeObserver = new ResizeObserver(() => {
         requestAnimationFrame(() => this.map?.invalidateSize());
@@ -68,12 +72,20 @@ export class MapComponent {
       }
       this.map?.remove();
       this.map = null;
+      this.logger.debug('Map destroyed');
     });
   }
 
   private startRenderingLoop(): void {
     const render = () => {
-      this.syncLayersToMap();
+      // Catch and log: an uncaught throw inside an rAF callback prevents the
+      // re-schedule, silently freezing the map. Logging keeps a record while
+      // letting the loop survive a transient Leaflet error.
+      try {
+        this.syncLayersToMap();
+      } catch (err) {
+        this.logger.error('Render loop iteration failed', err);
+      }
       this.animationFrameId = requestAnimationFrame(render);
     };
     this.animationFrameId = requestAnimationFrame(render);
@@ -102,7 +114,11 @@ export class MapComponent {
     // 2. Add new layers
     for (const radarSignal of currentSignals) {
       if (!this.renderedLayers.has(radarSignal.id)) {
-        this.renderedLayers.set(radarSignal.id, this.createLayersFor(radarSignal, map));
+        const rendered = this.createLayersFor(radarSignal, map);
+        if (this.highlightedIds.has(radarSignal.id)) {
+          rendered.polygon?.setStyle(ZONE_STYLE_FOCUSED);
+        }
+        this.renderedLayers.set(radarSignal.id, rendered);
       }
     }
 
@@ -136,14 +152,23 @@ export class MapComponent {
 
       const nextIds = new Set(this.store.burstAtCursor().map((s) => s.id));
 
+      // Wrap per-layer calls: setStyle on a layer Leaflet has internally
+      // detached can throw. We log and continue rather than letting one bad
+      // layer kill the highlight transition for the rest of the burst.
       for (const id of this.highlightedIds) {
-        if (!nextIds.has(id)) {
+        if (nextIds.has(id)) continue;
+        try {
           this.renderedLayers.get(id)?.polygon?.setStyle(ZONE_STYLE_IDLE);
+        } catch (err) {
+          this.logger.warn('setStyle(IDLE) failed', err);
         }
       }
       for (const id of nextIds) {
-        if (!this.highlightedIds.has(id)) {
+        if (this.highlightedIds.has(id)) continue;
+        try {
           this.renderedLayers.get(id)?.polygon?.setStyle(ZONE_STYLE_FOCUSED);
+        } catch (err) {
+          this.logger.warn('setStyle(FOCUSED) failed', err);
         }
       }
 

@@ -1,166 +1,120 @@
 /// <reference lib="webworker" />
 
-import { initDB, saveSignals, getSignalsInRange } from '../db/indexed-db.util';
-import { SignalMessage, RadarSignal } from '../../shared/models/signal.model';
-import { StateFrame, ControlCommand } from '../../shared/models/worker.model';
-import { PLAYBACK_TICK_MS, SIGNAL_VISIBLE_DURATION_MS } from '../../shared/constants/time.constants';
-import { PlaybackMode } from '../../shared/models/playback.model';
+import { LogSource } from '../../shared/constants/log-source.constant';
+import { Logger } from '../../shared/utils/logger';
+import { SignalRepository } from '../db/signal-repository';
+import { SignalStorage } from '../interfaces/signal-storage.interface';
+import { WorkerHost } from '../interfaces/worker-host.interface';
+import {
+  ControlCommand,
+  StateFrame,
+  isChannelNewSignal,
+} from '../../shared/models/worker.model';
+import {
+  ControlMessageType,
+  FrameMessageType,
+} from '../../shared/constants/worker.constants';
+import { PlaybackEngine } from './playback-engine';
 
-let db: IDBDatabase | null = null;
-let networkPort: MessagePort | null = null;
-let dbReady = false;
-let disposed = false;
-
-// State Machine
-let mode: PlaybackMode = 'live';
-let cursorOverride: number | null = null;
-let clockHandle: ReturnType<typeof setInterval> | null = null;
-let batchHandle: ReturnType<typeof setInterval> | null = null;
-
-// Batching buffer
-let buffer: RadarSignal[] = [];
-const BATCH_INTERVAL_MS = 100;
-let nextSignalSequence = 0;
-
-initDB().then(database => {
-  db = database;
-  dbReady = true;
-  startEngine();
-  startBatchWriter();
-});
-
-addEventListener('message', (event: MessageEvent<ControlCommand>) => {
-  const command = event.data;
-  if (command.type === 'INIT_PORTS' && event.ports.length > 0) {
-    networkPort = event.ports[0];
-    networkPort.onmessage = (e) => handleNetworkMessage(e.data);
-  } else if (command.type === 'DISPOSE') {
-    disposed = true;
-    cleanup();
-  } else if (command.type === 'PLAY') {
-    if (mode === 'live') cursorOverride = Date.now();
-    mode = 'playing';
-  } else if (command.type === 'PAUSE') {
-    if (mode === 'live') cursorOverride = Date.now();
-    mode = 'paused';
-  } else if (command.type === 'GO_LIVE') {
-    cursorOverride = null;
-    mode = 'live';
-  } else if (command.type === 'SEEK') {
-    cursorOverride = command.timestamp;
-    if (mode === 'live') mode = 'paused';
-  }
-});
-
-function cleanup(): void {
-  if (clockHandle) {
-    clearInterval(clockHandle);
-    clockHandle = null;
-  }
-  if (batchHandle) {
-    clearInterval(batchHandle);
-    batchHandle = null;
-  }
-  if (db) {
-    db.close();
-    db = null;
-  }
-  if (networkPort) {
-    networkPort.close();
-    networkPort = null;
-  }
+export interface DbWorkerSetupDeps {
+  /** Override the storage opener — tests pass an in-memory fake. */
+  openStorage?: () => Promise<SignalStorage>;
+  logger?: Logger;
 }
 
-function handleNetworkMessage(data: any): void {
-  if (disposed) return;
-  if (data.type === 'NEW_SIGNAL') {
-    const msg = data.payload as SignalMessage;
-    const signal: RadarSignal = {
-      id: `${msg.timestamp}-${nextSignalSequence++}`,
-      timestamp: msg.timestamp,
-      frequency: msg.frequency,
-      point: msg.point,
-      zone: msg.zone,
-    };
-    buffer.push(signal);
-  }
-}
+/**
+ * Wire the DB worker's message dispatch + lifecycle onto a host. Exported
+ * so the wiring (race fix + dispose-during-init guard) is unit-testable
+ * with a mock host; called at module-load time in real workers via the
+ * guard below.
+ */
+export function setupDbWorker(host: WorkerHost, deps: DbWorkerSetupDeps = {}): void {
+  const logger = deps.logger ?? new Logger(LogSource.DBWorker);
+  const openStorage = deps.openStorage ?? (() => SignalRepository.open());
 
-function startBatchWriter(): void {
-  batchHandle = setInterval(() => {
-    if (buffer.length > 0 && dbReady && db) {
-      const toSave = [...buffer];
-      buffer = [];
-      saveSignals(db, toSave).catch(err => console.error('DB Save error', err));
+  let engine: PlaybackEngine | null = null;
+  let networkPort: MessagePort | null = null;
+  let disposed = false;
+
+  openStorage()
+    .then((repository) => {
+      if (disposed) {
+        repository.close();
+        return;
+      }
+      engine = new PlaybackEngine({
+        repository,
+        logger,
+        postFrame: (frame: StateFrame) => {
+          host.postMessage({ type: FrameMessageType.Frame, payload: frame });
+        },
+      });
+      engine.start();
+      // The MessageChannel port may have been received before the engine
+      // was ready. MessagePort buffers messages until onmessage is set, so
+      // wiring the handler now drains any backfill signals queued during
+      // IDB open.
+      wireNetworkPort();
+    })
+    .catch((err) => logger.error('Failed to open SignalRepository', err));
+
+  host.addEventListener('message', (event: MessageEvent<ControlCommand>) => {
+    const command = event.data;
+
+    // Two unconditional-return branches so TS narrows `command` to
+    // DispatchableCommand at the dispatch call below.
+    if (command.type === ControlMessageType.InitPorts) {
+      if (event.ports.length > 0) {
+        networkPort = event.ports[0];
+        wireNetworkPort();
+      }
+      return;
     }
-  }, BATCH_INTERVAL_MS);
-}
 
-let lastVisibleIds = new Set<string>();
+    if (command.type === ControlMessageType.Dispose) {
+      disposed = true;
+      cleanup();
+      return;
+    }
 
-function startEngine(): void {
-  clockHandle = setInterval(async () => {
-    if (!dbReady || !db) return;
+    engine?.dispatch(command);
+  });
 
-    let now = Date.now();
-    if (mode === 'playing') {
-      const next = (cursorOverride ?? now) + PLAYBACK_TICK_MS;
-      if (next >= now) {
-         mode = 'live';
-         cursorOverride = null;
+  /**
+   * Idempotent: safe to call from either the INIT_PORTS handler (engine
+   * may not yet exist) or the openStorage resolution (port may not yet
+   * exist). Whichever path runs second installs the handler.
+   */
+  function wireNetworkPort(): void {
+    if (engine === null || networkPort === null) return;
+    const enginePtr = engine;
+    networkPort.onmessage = (e) => {
+      if (disposed) return;
+      if (isChannelNewSignal(e.data)) {
+        enginePtr.ingestNewSignal(e.data.payload);
       } else {
-         cursorOverride = next;
+        logger.warn('Unhandled channel message', e.data);
       }
+    };
+  }
+
+  function cleanup(): void {
+    if (engine !== null) {
+      engine.dispose();
+      engine = null;
     }
-    
-    const cursor = (mode === 'live' || cursorOverride === null) ? Date.now() : cursorOverride;
-    
-    const windowStart = cursor - SIGNAL_VISIBLE_DURATION_MS;
-    const windowEnd = cursor + SIGNAL_VISIBLE_DURATION_MS; // Grab a bit ahead to find burst
-    
-    try {
-      const signals = await getSignalsInRange(db, windowStart, windowEnd);
-      
-      const visibleSignals = signals.filter(s => s.timestamp >= cursor - SIGNAL_VISIBLE_DURATION_MS && s.timestamp <= cursor);
-      
-      const currentIds = new Set(visibleSignals.map(s => s.id));
-      const addedSignals = visibleSignals.filter(s => !lastVisibleIds.has(s.id));
-      const removedSignalIds = Array.from(lastVisibleIds).filter(id => !currentIds.has(id));
-      
-      lastVisibleIds = currentIds;
-
-      // Calculate burst (simplified for worker: exact timestamp match of closest)
-      let burstAtCursor: RadarSignal[] = [];
-      if (signals.length > 0) {
-          // Find closest
-          let closest = signals[0];
-          let minDiff = Math.abs(signals[0].timestamp - cursor);
-          for(let i=1; i<signals.length; i++) {
-              const diff = Math.abs(signals[i].timestamp - cursor);
-              if (diff < minDiff) {
-                  minDiff = diff;
-                  closest = signals[i];
-              }
-          }
-          if (minDiff <= SIGNAL_VISIBLE_DURATION_MS) {
-              burstAtCursor = signals.filter(s => s.timestamp === closest.timestamp);
-          }
-      }
-
-      const frame: StateFrame = {
-        mode,
-        cursor,
-        now,
-        visibleSignals,
-        addedSignals,
-        removedSignalIds,
-        burstAtCursor
-      };
-      
-      postMessage({ type: 'FRAME', payload: frame });
-    } catch (e) {
-      console.error('Frame gen error', e);
+    if (networkPort !== null) {
+      networkPort.close();
+      networkPort = null;
     }
+  }
+}
 
-  }, PLAYBACK_TICK_MS);
+// Production wiring: fires when the file is loaded as a real Worker
+// (`new Worker(new URL('./db.worker.ts', ...))`). The check short-circuits
+// in jsdom / Node, where `WorkerGlobalScope` isn't defined, so importing
+// this file in tests has no side effects.
+declare const WorkerGlobalScope: { prototype: object } | undefined;
+if (typeof WorkerGlobalScope !== 'undefined') {
+  setupDbWorker(self as unknown as WorkerHost);
 }

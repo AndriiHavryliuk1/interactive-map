@@ -4,6 +4,7 @@ import {
   Component,
   computed,
   DestroyRef,
+  effect,
   ElementRef,
   inject,
   signal,
@@ -11,7 +12,10 @@ import {
 } from '@angular/core';
 
 import { FORMAT_TIME_HM } from '../../shared/constants/datetime-formats.constant';
+import { LogSource } from '../../shared/constants/log-source.constant';
 import { SignalStore } from '../../core/state/signal-store';
+import { PlaybackMode } from '../../shared/models/playback.model';
+import { Logger } from '../../shared/utils/logger';
 
 @Component({
   selector: 'app-control-panel',
@@ -23,6 +27,7 @@ import { SignalStore } from '../../core/state/signal-store';
 export class ControlPanelComponent {
   private readonly store = inject(SignalStore);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly logger = new Logger(LogSource.ControlPanelComponent);
 
   private readonly track = viewChild.required<ElementRef<HTMLDivElement>>('track');
   private readonly draggingPointerId = signal<number | null>(null);
@@ -63,6 +68,22 @@ export class ControlPanelComponent {
 
   constructor() {
     this.destroyRef.onDestroy(() => this.dragTeardown?.());
+    this.logModeTransitions();
+  }
+
+  /**
+   * Log every transition in `mode`. The first effect run only captures the
+   * initial value as the baseline — no log fires until the next change.
+   */
+  private logModeTransitions(): void {
+    let previous: PlaybackMode | null = null;
+    effect(() => {
+      const current = this.mode();
+      if (previous !== null && previous !== current) {
+        this.logger.info(`mode: ${previous} → ${current}`);
+      }
+      previous = current;
+    });
   }
 
   protected toggleTransport(): void {
@@ -79,7 +100,15 @@ export class ControlPanelComponent {
 
   protected onTrackPointerDown(event: PointerEvent): void {
     const trackEl = this.track().nativeElement;
-    trackEl.setPointerCapture(event.pointerId);
+    // setPointerCapture can throw InvalidPointerId when the pointer is
+    // already released (fast tap + release before this handler runs).
+    // Capture is best-effort: if it fails we still register the drag
+    // listeners, just without explicit capture.
+    try {
+      trackEl.setPointerCapture(event.pointerId);
+    } catch {
+      // expected for stale pointers; nothing to recover
+    }
     this.draggingPointerId.set(event.pointerId);
 
     this.seekFromPointer(event);
@@ -98,7 +127,11 @@ export class ControlPanelComponent {
 
     const onEnd = (e: PointerEvent) => {
       if (e.pointerId !== this.draggingPointerId()) return;
-      trackEl.releasePointerCapture(e.pointerId);
+      try {
+        trackEl.releasePointerCapture(e.pointerId);
+      } catch {
+        // expected if capture was never established or already released
+      }
       teardown();
       this.draggingPointerId.set(null);
     };

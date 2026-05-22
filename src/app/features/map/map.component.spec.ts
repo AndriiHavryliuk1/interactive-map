@@ -31,6 +31,15 @@ const tracker = vi.hoisted(() => ({
 }));
 
 vi.mock('leaflet', () => {
+  const makeMarker = (latlng: [number, number]) => {
+    const m: FakeMarker = {
+      latlng,
+      addTo: vi.fn().mockReturnThis() as never,
+      bindPopup: vi.fn().mockReturnThis() as never,
+    };
+    tracker.markers.push(m);
+    return m;
+  };
   return {
     Icon: { Default: { mergeOptions: () => {}, imagePath: '' } },
     map: vi.fn(() => {
@@ -39,15 +48,8 @@ vi.mock('leaflet', () => {
       return m;
     }),
     tileLayer: vi.fn(() => ({ addTo: () => ({}) })),
-    marker: vi.fn((latlng: [number, number]) => {
-      const m: FakeMarker = {
-        latlng,
-        addTo: vi.fn().mockReturnThis() as never,
-        bindPopup: vi.fn().mockReturnThis() as never,
-      };
-      tracker.markers.push(m);
-      return m;
-    }),
+    marker: vi.fn(makeMarker),
+    circleMarker: vi.fn(makeMarker),
     polygon: vi.fn((coords: [number, number][], style: unknown) => {
       const p: FakePolygon = {
         coords,
@@ -102,13 +104,23 @@ function setUp(historical: RadarSignal[] = []): {
 
   const fixture = TestBed.createComponent(MapComponent);
   fixture.detectChanges(); // triggers afterNextRender → initLeaflet → mapReady=true → effects flush
+  // Drive the rAF render loop a few times to flush layer creation.
+  vi.runOnlyPendingTimers();
+  fixture.detectChanges();
   return { fixture, store: mockStore };
+}
+
+class StubResizeObserver {
+  observe(): void {}
+  unobserve(): void {}
+  disconnect(): void {}
 }
 
 describe('MapComponent', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(NOW));
+    vi.stubGlobal('ResizeObserver', StubResizeObserver);
     tracker.map = null;
     tracker.markers.length = 0;
     tracker.polygons.length = 0;
@@ -146,6 +158,7 @@ describe('MapComponent', () => {
 
     store.visibleSignals.set([frame('1', NOW)]);
     fixture.detectChanges();
+    vi.advanceTimersByTime(20);
 
     expect(tracker.markers).toHaveLength(1);
     expect(tracker.polygons).toHaveLength(1);
@@ -159,6 +172,7 @@ describe('MapComponent', () => {
     store.visibleSignals.set([]);
     store.seekTo(NOW - 5 * 60_000);
     fixture.detectChanges();
+    vi.advanceTimersByTime(20);
 
     const map = tracker.map!;
     expect(map.removeLayer).toHaveBeenCalledWith(expect.objectContaining({ latlng: [50, 30] }));
@@ -192,6 +206,7 @@ describe('MapComponent', () => {
     store.visibleSignals.set([signal1, signal2]);
     store.burstAtCursor.set([signal2]);
     fixture.detectChanges();
+    vi.advanceTimersByTime(20);
 
     expect(oldPolygon.setStyle).toHaveBeenLastCalledWith(ZONE_STYLE_IDLE);
   });
