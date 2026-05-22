@@ -1,17 +1,17 @@
-import { provideZonelessChangeDetection } from '@angular/core';
+import { provideZonelessChangeDetection, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { Subject } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { SIGNAL_GATEWAY, SignalGateway } from '../../core/gateway/signal-gateway';
 import { SignalStore } from '../../core/state/signal-store';
-import { SignalMessage } from '../../shared/models/signal.model';
+import { RadarSignal } from '../../shared/models/signal.model';
+import { PlaybackMode } from '../../shared/models/playback.model';
 import { CoordinatesPanelContainerComponent } from './coordinates-panel.container.component';
 
 const NOW = 1_700_000_000_000;
 
-function frame(timestamp: number, frequency = 100): SignalMessage {
+function frame(id: string, timestamp: number, frequency = 100): RadarSignal {
   return {
+    id,
     timestamp,
     frequency,
     point: { lat: 50, lon: 30 },
@@ -19,32 +19,44 @@ function frame(timestamp: number, frequency = 100): SignalMessage {
   };
 }
 
-class FakeGateway implements SignalGateway {
-  readonly liveSubject = new Subject<SignalMessage>();
-  readonly liveSignals$ = this.liveSubject.asObservable();
-  constructor(public historicalSignals: SignalMessage[] = []) {}
+class MockSignalStore {
+  mode = signal<PlaybackMode>('live');
+  visibleSignals = signal<readonly RadarSignal[]>([]);
+  burstAtCursor = signal<readonly RadarSignal[]>([]);
+  cursor = signal<number>(NOW);
+
+  pause = vi.fn(() => this.mode.set('paused'));
+  play = vi.fn(() => this.mode.set('playing'));
+  goLive = vi.fn(() => this.mode.set('live'));
+  seekTo = vi.fn((ts: number) => {
+    this.cursor.set(ts);
+    this.mode.set('paused');
+  });
 }
 
-function setUp(historical: SignalMessage[] = []): {
+function setUp(historical: RadarSignal[] = []): {
   fixture: ComponentFixture<CoordinatesPanelContainerComponent>;
-  store: SignalStore;
-  gateway: FakeGateway;
+  store: MockSignalStore;
   el: HTMLElement;
 } {
-  const gateway = new FakeGateway(historical);
+  const mockStore = new MockSignalStore();
+  mockStore.visibleSignals.set(historical);
+  // Simple heuristic for burstAtCursor in tests: if any signal matches the cursor
+  const burst = historical.filter(s => s.timestamp === mockStore.cursor());
+  mockStore.burstAtCursor.set(burst);
+
   TestBed.configureTestingModule({
     imports: [CoordinatesPanelContainerComponent],
     providers: [
       provideZonelessChangeDetection(),
-      { provide: SIGNAL_GATEWAY, useValue: gateway },
+      { provide: SignalStore, useValue: mockStore },
     ],
   });
 
-  const store = TestBed.inject(SignalStore);
   const fixture = TestBed.createComponent(CoordinatesPanelContainerComponent);
   fixture.detectChanges();
 
-  return { fixture, store, gateway, el: fixture.nativeElement as HTMLElement };
+  return { fixture, store: mockStore, el: fixture.nativeElement as HTMLElement };
 }
 
 describe('CoordinatesPanelContainerComponent', () => {
@@ -97,21 +109,28 @@ describe('CoordinatesPanelContainerComponent', () => {
     });
 
     it('renders one card per signal in the burst', () => {
-      const { el } = setUp([
-        frame(NOW - 100, 144),
-        frame(NOW - 100, 200),
-        frame(NOW - 100, 500),
-      ]);
+      const { store, fixture, el } = setUp();
+      const signals = [
+        frame('1', NOW, 144),
+        frame('2', NOW, 200),
+        frame('3', NOW, 500),
+      ];
+      store.burstAtCursor.set(signals);
+      fixture.detectChanges();
       expect(el.querySelectorAll('app-coordinates-panel')).toHaveLength(3);
     });
 
     it('hides the burst badge for a solo signal', () => {
-      const { el } = setUp([frame(NOW - 100)]);
+      const { store, fixture, el } = setUp();
+      store.burstAtCursor.set([frame('1', NOW)]);
+      fixture.detectChanges();
       expect(el.querySelector('.burst-badge')).toBeNull();
     });
 
     it('shows a compact ×N badge for a multi-signal burst', () => {
-      const { el } = setUp([frame(NOW - 100, 144), frame(NOW - 100, 200)]);
+      const { store, fixture, el } = setUp();
+      store.burstAtCursor.set([frame('1', NOW, 144), frame('2', NOW, 200)]);
+      fixture.detectChanges();
       const badge = el.querySelector('.burst-badge');
       expect(badge).toBeTruthy();
       expect(badge?.textContent?.trim()).toBe('×2');
@@ -128,9 +147,9 @@ describe('CoordinatesPanelContainerComponent', () => {
 
     it('reflects the number of signals in the trailing 30s window', () => {
       const { el } = setUp([
-        frame(NOW - 25_000),
-        frame(NOW - 10_000),
-        frame(NOW - 1_000),
+        frame('1', NOW - 25_000),
+        frame('2', NOW - 10_000),
+        frame('3', NOW - 1_000),
       ]);
       expect(el.querySelector('.footer')?.textContent).toContain('Видимих зараз: 3');
     });
@@ -155,7 +174,7 @@ describe('CoordinatesPanelContainerComponent', () => {
     });
 
     it('hides body content and footer when [collapsed]="true"', () => {
-      const { fixture, el } = setUp([frame(NOW - 1_000)]);
+      const { fixture, el } = setUp([frame('1', NOW - 1_000)]);
       fixture.componentRef.setInput('collapsed', true);
       fixture.detectChanges();
 

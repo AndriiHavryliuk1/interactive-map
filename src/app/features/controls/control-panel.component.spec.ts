@@ -1,40 +1,51 @@
-import { provideZonelessChangeDetection } from '@angular/core';
+import { provideZonelessChangeDetection, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { Subject } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { SIGNAL_GATEWAY, SignalGateway } from '../../core/gateway/signal-gateway';
 import { SignalStore } from '../../core/state/signal-store';
 import { HISTORY_WINDOW_MS } from '../../shared/constants/time.constants';
-import { SignalMessage } from '../../shared/models/signal.model';
+import { PlaybackMode } from '../../shared/models/playback.model';
 import { ControlPanelComponent } from './control-panel.component';
 
 const NOW = 1_700_000_000_000;
 const TRACK_WIDTH = 1000;
 
-class FakeGateway implements SignalGateway {
-  readonly liveSubject = new Subject<SignalMessage>();
-  readonly liveSignals$ = this.liveSubject.asObservable();
-  readonly historicalSignals: readonly SignalMessage[] = [];
+class MockSignalStore {
+  mode = signal<PlaybackMode>('live');
+  cursor = signal<number>(NOW);
+  windowStart = signal<number>(NOW - HISTORY_WINDOW_MS);
+  windowEnd = signal<number>(NOW);
+
+  play = vi.fn(() => this.mode.set('playing'));
+  pause = vi.fn(() => this.mode.set('paused'));
+  goLive = vi.fn(() => {
+    this.mode.set('live');
+    this.cursor.set(NOW);
+  });
+  seekTo = vi.fn((ts: number) => {
+    this.cursor.set(ts);
+    this.mode.set('paused');
+  });
 }
 
 function setUp(): {
   fixture: ComponentFixture<ControlPanelComponent>;
-  store: SignalStore;
+  store: MockSignalStore;
   el: HTMLElement;
   track: HTMLElement;
   transport: HTMLButtonElement;
   live: HTMLButtonElement;
 } {
+  const mockStore = new MockSignalStore();
+
   TestBed.configureTestingModule({
     imports: [ControlPanelComponent],
     providers: [
       provideZonelessChangeDetection(),
-      { provide: SIGNAL_GATEWAY, useValue: new FakeGateway() },
+      { provide: SignalStore, useValue: mockStore },
     ],
   });
 
-  const store = TestBed.inject(SignalStore);
   const fixture = TestBed.createComponent(ControlPanelComponent);
   fixture.detectChanges();
 
@@ -58,7 +69,7 @@ function setUp(): {
 
   return {
     fixture,
-    store,
+    store: mockStore,
     el,
     track,
     transport: el.querySelector('.transport') as HTMLButtonElement,
