@@ -1,12 +1,11 @@
-import { provideZonelessChangeDetection } from '@angular/core';
+import { provideZonelessChangeDetection, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { Subject } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { SIGNAL_GATEWAY, SignalGateway } from '../../core/gateway/signal-gateway';
 import { SignalStore } from '../../core/state/signal-store';
 import { ZONE_STYLE_FOCUSED, ZONE_STYLE_IDLE } from '../../shared/constants/map-styles.constant';
-import { SignalMessage } from '../../shared/models/signal.model';
+import { RadarSignal } from '../../shared/models/signal.model';
+import { PlaybackMode } from '../../shared/models/playback.model';
 import { MapComponent } from './map.component';
 
 interface FakeMarker {
@@ -64,8 +63,9 @@ vi.mock('leaflet', () => {
 
 const NOW = 1_700_000_000_000;
 
-function frame(timestamp: number, opts: Partial<SignalMessage> = {}): SignalMessage {
+function frame(id: string, timestamp: number, opts: Partial<RadarSignal> = {}): RadarSignal {
   return {
+    id,
     timestamp,
     frequency: opts.frequency ?? 100,
     point: opts.point ?? { lat: 50, lon: 30 },
@@ -73,30 +73,36 @@ function frame(timestamp: number, opts: Partial<SignalMessage> = {}): SignalMess
   };
 }
 
-class FakeGateway implements SignalGateway {
-  readonly liveSubject = new Subject<SignalMessage>();
-  readonly liveSignals$ = this.liveSubject.asObservable();
-  constructor(public historicalSignals: SignalMessage[] = []) {}
+class MockSignalStore {
+  mode = signal<PlaybackMode>('live');
+  visibleSignals = signal<readonly RadarSignal[]>([]);
+  burstAtCursor = signal<readonly RadarSignal[]>([]);
+  cursor = signal<number>(NOW);
+
+  seekTo = vi.fn((ts: number) => {
+    this.cursor.set(ts);
+    this.mode.set('paused');
+  });
 }
 
-function setUp(historical: SignalMessage[] = []): {
+function setUp(historical: RadarSignal[] = []): {
   fixture: ComponentFixture<MapComponent>;
-  store: SignalStore;
-  gateway: FakeGateway;
+  store: MockSignalStore;
 } {
-  const gateway = new FakeGateway(historical);
+  const mockStore = new MockSignalStore();
+  mockStore.visibleSignals.set(historical);
+
   TestBed.configureTestingModule({
     imports: [MapComponent],
     providers: [
       provideZonelessChangeDetection(),
-      { provide: SIGNAL_GATEWAY, useValue: gateway },
+      { provide: SignalStore, useValue: mockStore },
     ],
   });
 
-  const store = TestBed.inject(SignalStore);
   const fixture = TestBed.createComponent(MapComponent);
   fixture.detectChanges(); // triggers afterNextRender → initLeaflet → mapReady=true → effects flush
-  return { fixture, store, gateway };
+  return { fixture, store: mockStore };
 }
 
 describe('MapComponent', () => {
@@ -119,26 +125,26 @@ describe('MapComponent', () => {
   });
 
   it('renders a marker for each visible signal on first paint', () => {
-    setUp([frame(NOW - 1_000), frame(NOW - 5_000)]);
+    setUp([frame('1', NOW - 1_000), frame('2', NOW - 5_000)]);
     expect(tracker.markers).toHaveLength(2);
   });
 
   it('renders a polygon for a signal whose zone has vertices', () => {
-    setUp([frame(NOW - 1_000)]);
+    setUp([frame('1', NOW - 1_000)]);
     expect(tracker.polygons).toHaveLength(1);
   });
 
   it('skips the polygon entirely when zone is empty', () => {
-    setUp([frame(NOW - 1_000, { zone: [] })]);
+    setUp([frame('1', NOW - 1_000, { zone: [] })]);
     expect(tracker.markers).toHaveLength(1);
     expect(tracker.polygons).toHaveLength(0);
   });
 
   it('adds layers when a new live signal arrives', () => {
-    const { fixture, gateway } = setUp();
+    const { store, fixture } = setUp();
     expect(tracker.markers).toHaveLength(0);
 
-    gateway.liveSubject.next(frame(NOW));
+    store.visibleSignals.set([frame('1', NOW)]);
     fixture.detectChanges();
 
     expect(tracker.markers).toHaveLength(1);
@@ -146,10 +152,11 @@ describe('MapComponent', () => {
   });
 
   it('removes layers when a signal ages out of the visible window', () => {
-    const { fixture, store } = setUp([frame(NOW)]);
+    const { store, fixture } = setUp([frame('1', NOW)]);
     expect(tracker.markers).toHaveLength(1);
 
     // Scrub to a moment 5 minutes before that signal → it falls outside [cursor-30s, cursor].
+    store.visibleSignals.set([]);
     store.seekTo(NOW - 5 * 60_000);
     fixture.detectChanges();
 
@@ -158,7 +165,9 @@ describe('MapComponent', () => {
   });
 
   it('applies the FOCUSED zone style to every polygon in the current burst', () => {
-    const { fixture } = setUp([frame(NOW - 100, { frequency: 1 }), frame(NOW - 100, { frequency: 2 })]);
+    const signals = [frame('1', NOW - 100, { frequency: 1 }), frame('2', NOW - 100, { frequency: 2 })];
+    const { store, fixture } = setUp(signals);
+    store.burstAtCursor.set(signals);
     fixture.detectChanges();
 
     expect(tracker.polygons).toHaveLength(2);
@@ -169,13 +178,19 @@ describe('MapComponent', () => {
 
   it('reverts a polygon to IDLE when a newer burst displaces it', () => {
     // Initial state: a single signal at NOW - 100 is the closest, so it's FOCUSED.
-    const { fixture, gateway } = setUp([frame(NOW - 100, { frequency: 1 })]);
+    const signal1 = frame('1', NOW - 100, { frequency: 1 });
+    const { store, fixture } = setUp([signal1]);
+    store.burstAtCursor.set([signal1]);
+    fixture.detectChanges();
+
     const oldPolygon = tracker.polygons[0];
     expect(oldPolygon.setStyle).toHaveBeenCalledWith(ZONE_STYLE_FOCUSED);
 
     // A fresh signal arrives exactly at the cursor — it becomes the closest,
     // and the old polygon (still on the map) should revert to IDLE.
-    gateway.liveSubject.next(frame(NOW, { frequency: 2 }));
+    const signal2 = frame('2', NOW, { frequency: 2 });
+    store.visibleSignals.set([signal1, signal2]);
+    store.burstAtCursor.set([signal2]);
     fixture.detectChanges();
 
     expect(oldPolygon.setStyle).toHaveBeenLastCalledWith(ZONE_STYLE_IDLE);

@@ -5,8 +5,8 @@
 const { WebSocketServer } = require('ws');
 
 const PORT = Number(process.env.PORT ?? 8080);
-const MIN_TICK_DELAY_MS = 300;
-const MAX_TICK_DELAY_RANGE_MS = 3000;
+const MIN_TICK_DELAY_MS = 3;
+const MAX_TICK_DELAY_RANGE_MS = 30;
 const MAX_BURST_SIZE = 10;
 const BURST_GROWTH_PROBABILITY = 0.3;
 const WS_OPEN = 1;
