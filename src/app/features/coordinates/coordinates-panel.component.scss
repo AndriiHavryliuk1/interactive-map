@@ -33,7 +33,10 @@
   flex-direction: column;
   gap: var(--space-1);
 
-  dt { @include m.eyebrow; margin: 0; }
+  dt {
+    @include m.eyebrow;
+    margin: 0;
+  }
 
   dd {
     @include m.tabular-nums;

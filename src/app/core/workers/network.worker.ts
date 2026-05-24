@@ -1,88 +1,46 @@
 /// <reference lib="webworker" />
 
-import { DEFAULT_WS_URL, INITIAL_RECONNECT_DELAY_MS, MAX_RECONNECT_DELAY_MS } from '../gateway/gateway.constants';
-import { SignalMessage } from '../../shared/models/signal.model';
+import { LogSource } from '../../shared/constants/log-source.constant';
+import { Logger } from '../../shared/utils/logger';
+import { ControlCommand } from '../../shared/models/worker.model';
+import { ControlMessageType } from '../../shared/constants/worker.constants';
+import { WorkerHost } from '../interfaces/worker-host.interface';
+import { NetworkGateway } from './network-gateway';
 
-let dbPort: MessagePort | null = null;
-let socket: WebSocket | null = null;
-let reconnectAttempt = 0;
-let reconnectHandle: ReturnType<typeof setTimeout> | null = null;
-let disposed = false;
-
-addEventListener('message', (event: MessageEvent) => {
-  if (event.data?.type === 'INIT_PORTS' && event.ports.length > 0) {
-    dbPort = event.ports[0];
-    connect();
-  } else if (event.data?.type === 'DISPOSE') {
-    disposed = true;
-    shutdown();
-  }
-});
-
-function shutdown(): void {
-  cleanupSocket();
-  if (dbPort) {
-    dbPort.close();
-    dbPort = null;
-  }
+export interface NetworkWorkerSetupDeps {
+  /** Override the gateway instance — tests pass a fake. */
+  gateway?: NetworkGateway;
+  logger?: Logger;
 }
 
-function cleanupSocket(): void {
-  if (reconnectHandle) {
-    clearTimeout(reconnectHandle);
-    reconnectHandle = null;
-  }
-  if (socket) {
-    const oldSocket = socket;
-    socket = null;
-    oldSocket.onopen = null;
-    oldSocket.onmessage = null;
-    oldSocket.onerror = null;
-    oldSocket.onclose = null;
-    oldSocket.close();
-  }
-}
+/**
+ * Wire the network worker's message dispatch onto a host. Exported so the
+ * wiring is unit-testable with a mock host; called at module-load time in
+ * real workers via the guard below.
+ */
+export function setupNetworkWorker(host: WorkerHost, deps: NetworkWorkerSetupDeps = {}): void {
+  const logger = deps.logger ?? new Logger(LogSource.NetworkWorker);
+  const gateway = deps.gateway ?? new NetworkGateway({ logger });
 
-function connect(): void {
-  if (disposed) return;
-  cleanupSocket();
-  
-  const s = new WebSocket(DEFAULT_WS_URL);
-  socket = s;
+  host.addEventListener('message', (event: MessageEvent<ControlCommand>) => {
+    const command = event.data;
 
-  s.onopen = () => {
-    if (socket !== s) return;
-    reconnectAttempt = 0;
-  };
-
-  s.onmessage = (event) => {
-    if (socket !== s) return;
-    try {
-      const msg = JSON.parse(event.data) as SignalMessage;
-      if (dbPort) {
-        dbPort.postMessage({ type: 'NEW_SIGNAL', payload: msg });
+    if (command.type === ControlMessageType.InitPorts) {
+      if (event.ports.length > 0) {
+        gateway.attachPort(event.ports[0]);
       }
-    } catch {
-      // drop malformed
+      return;
     }
-  };
 
-  s.onclose = () => {
-    if (socket !== s) return;
-    if (!disposed) {
-      scheduleReconnect();
+    if (command.type === ControlMessageType.Dispose) {
+      gateway.dispose();
+      return;
     }
-  };
+  });
 }
 
-function scheduleReconnect(): void {
-  if (disposed) return;
-  
-  const delay = Math.min(
-    MAX_RECONNECT_DELAY_MS,
-    INITIAL_RECONNECT_DELAY_MS * 2 ** reconnectAttempt
-  );
-  reconnectAttempt++;
-  if (reconnectHandle) clearTimeout(reconnectHandle);
-  reconnectHandle = setTimeout(() => connect(), delay);
+// Production wiring: see db.worker.ts for rationale.
+declare const WorkerGlobalScope: { prototype: object } | undefined;
+if (typeof WorkerGlobalScope !== 'undefined') {
+  setupNetworkWorker(self as unknown as WorkerHost);
 }

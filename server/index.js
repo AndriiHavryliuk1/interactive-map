@@ -1,6 +1,6 @@
 // Minimal local WebSocket "radar" server.
 // Each tick emits a 1..10-signal burst with a shared timestamp, then
-// schedules the next tick 0.3-3.3s later. Run with `npm run server`.
+// schedules the next tick 3-30ms later. Run with `npm run server`.
 
 const { WebSocketServer } = require('ws');
 
@@ -10,6 +10,8 @@ const MAX_TICK_DELAY_RANGE_MS = 30;
 const MAX_BURST_SIZE = 10;
 const BURST_GROWTH_PROBABILITY = 0.3;
 const WS_OPEN = 1;
+const HISTORY_WINDOW_MS = 12 * 60 * 60 * 1000;
+const BACKFILL_STEP_MS = 60 * 1000;
 
 const CENTERS = [
   [50.4501, 30.5234], [50.6800, 30.2300], [50.6500, 30.8800],
@@ -53,11 +55,38 @@ function pickBurstSize() {
   return size;
 }
 
+const BACKFILL_PAYLOADS = buildBackfillPayloads();
+const BACKFILL_CHUNK_SIZE = 50;
+
+function buildBackfillPayloads() {
+  const now = Date.now();
+  const out = [];
+  for (let t = now - HISTORY_WINDOW_MS; t < now; t += BACKFILL_STEP_MS) {
+    const jitter = Math.floor((Math.random() - 0.5) * BACKFILL_STEP_MS);
+    out.push(JSON.stringify(makeSignal(t + jitter)));
+  }
+  return out;
+}
+
 const wss = new WebSocketServer({ port: PORT });
 
-wss.on('connection', () => {
+wss.on('connection', (socket) => {
   console.log(`[ws] client connected — total clients: ${wss.clients.size}`);
+  sendBackfill(socket, 0);
 });
+
+// Chunked send: 50 messages per tick, yield to event loop between chunks
+// so the WS send buffer drains and other I/O isn't starved.
+function sendBackfill(socket, fromIndex) {
+  if (socket.readyState !== WS_OPEN) return;
+  const end = Math.min(fromIndex + BACKFILL_CHUNK_SIZE, BACKFILL_PAYLOADS.length);
+  for (let i = fromIndex; i < end; i++) {
+    socket.send(BACKFILL_PAYLOADS[i]);
+  }
+  if (end < BACKFILL_PAYLOADS.length) {
+    setImmediate(() => sendBackfill(socket, end));
+  }
+}
 
 (function tick() {
   // One timestamp per whole burst so the client can group signals by

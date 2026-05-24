@@ -65,7 +65,9 @@
   height: $size;
   border-radius: var(--radius-full);
   font-weight: var(--font-weight-bold);
-  transition: transform var(--transition-fast), background var(--transition-fast);
+  transition:
+    transform var(--transition-fast),
+    background var(--transition-fast);
 
   &:active {
     transform: scale(0.95);
@@ -83,9 +85,10 @@
   font-size: var(--font-size-md);
   font-weight: var(--font-weight-semibold);
   letter-spacing: var(--letter-spacing-wide);
-  transition: background var(--transition-fast),
-              border-color var(--transition-fast),
-              color var(--transition-fast);
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast),
+    color var(--transition-fast);
 }
 
 // ---- focus ------------------------------------------------------------

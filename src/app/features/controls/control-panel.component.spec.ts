@@ -19,8 +19,8 @@ class MockSignalStore {
   play = vi.fn(() => this.mode.set('playing'));
   pause = vi.fn(() => this.mode.set('paused'));
   goLive = vi.fn(() => {
+    this.cursor.set(this.windowEnd());
     this.mode.set('live');
-    this.cursor.set(NOW);
   });
   seekTo = vi.fn((ts: number) => {
     this.cursor.set(ts);
@@ -40,10 +40,7 @@ function setUp(): {
 
   TestBed.configureTestingModule({
     imports: [ControlPanelComponent],
-    providers: [
-      provideZonelessChangeDetection(),
-      { provide: SignalStore, useValue: mockStore },
-    ],
+    providers: [provideZonelessChangeDetection(), { provide: SignalStore, useValue: mockStore }],
   });
 
   const fixture = TestBed.createComponent(ControlPanelComponent);

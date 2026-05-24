@@ -4,11 +4,15 @@
   "scripts": {
     "ng": "ng",
     "start": "concurrently -n ws,ng -c magenta,cyan --kill-others-on-fail \"npm:server\" \"npm:serve\"",
-    "serve": "ng serve",
+    "serve": "nx serve",
     "server": "node server/index.js",
-    "build": "ng build",
-    "watch": "ng build --watch --configuration development",
-    "test": "ng test"
+    "build": "nx build",
+    "watch": "nx build --watch --configuration development",
+    "test": "nx test",
+    "lint": "nx lint",
+    "lint:fix": "nx lint --fix",
+    "format": "nx format:write",
+    "format:check": "nx format:check"
   },
   "private": true,
   "packageManager": "npm@10.9.7",
@@ -24,14 +28,25 @@
     "tslib": "^2.3.0"
   },
   "devDependencies": {
+    "@angular-devkit/core": "^21.2.9",
+    "@angular-devkit/schematics": "^21.2.9",
     "@angular/build": "^21.2.9",
     "@angular/cli": "^21.2.9",
     "@angular/compiler-cli": "^21.2.0",
+    "@eslint/js": "^10.0.1",
+    "@nx/angular": "22.7.2",
+    "@nx/eslint": "^22.7.2",
+    "@nx/workspace": "22.7.2",
+    "@schematics/angular": "^21.2.9",
+    "angular-eslint": "^21.4.0",
     "concurrently": "^9.2.1",
+    "eslint": "^10.4.0",
     "fake-indexeddb": "^6.2.5",
     "jsdom": "^28.0.0",
+    "nx": "22.7.2",
     "prettier": "^3.8.1",
     "typescript": "~5.9.2",
+    "typescript-eslint": "^8.59.4",
     "vitest": "^4.0.8",
     "ws": "^8.20.1"
   }

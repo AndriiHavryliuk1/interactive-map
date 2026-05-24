@@ -26,10 +26,9 @@
       <div class="title-group">
         <h2>Сигнал</h2>
         @if (currentBurst().length > 1) {
-          <span
-            class="burst-badge"
-            [attr.title]="currentBurst().length + ' сигналів одночасно'"
-          >×{{ currentBurst().length }}</span>
+          <span class="burst-badge" [attr.title]="currentBurst().length + ' сигналів одночасно'"
+            >×{{ currentBurst().length }}</span
+          >
         }
       </div>
       <span class="mode" [attr.data-mode]="mode()">{{ modeLabel() }}</span>

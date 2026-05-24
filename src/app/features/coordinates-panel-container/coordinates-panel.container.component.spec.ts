@@ -42,15 +42,12 @@ function setUp(historical: RadarSignal[] = []): {
   const mockStore = new MockSignalStore();
   mockStore.visibleSignals.set(historical);
   // Simple heuristic for burstAtCursor in tests: if any signal matches the cursor
-  const burst = historical.filter(s => s.timestamp === mockStore.cursor());
+  const burst = historical.filter((s) => s.timestamp === mockStore.cursor());
   mockStore.burstAtCursor.set(burst);
 
   TestBed.configureTestingModule({
     imports: [CoordinatesPanelContainerComponent],
-    providers: [
-      provideZonelessChangeDetection(),
-      { provide: SignalStore, useValue: mockStore },
-    ],
+    providers: [provideZonelessChangeDetection(), { provide: SignalStore, useValue: mockStore }],
   });
 
   const fixture = TestBed.createComponent(CoordinatesPanelContainerComponent);
@@ -110,11 +107,7 @@ describe('CoordinatesPanelContainerComponent', () => {
 
     it('renders one card per signal in the burst', () => {
       const { store, fixture, el } = setUp();
-      const signals = [
-        frame('1', NOW, 144),
-        frame('2', NOW, 200),
-        frame('3', NOW, 500),
-      ];
+      const signals = [frame('1', NOW, 144), frame('2', NOW, 200), frame('3', NOW, 500)];
       store.burstAtCursor.set(signals);
       fixture.detectChanges();
       expect(el.querySelectorAll('app-coordinates-panel')).toHaveLength(3);

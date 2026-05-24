@@ -4,6 +4,7 @@ import {
   Component,
   computed,
   DestroyRef,
+  effect,
   ElementRef,
   inject,
   signal,
@@ -11,7 +12,10 @@ import {
 } from '@angular/core';
 
 import { FORMAT_TIME_HM } from '../../shared/constants/datetime-formats.constant';
+import { LogSource } from '../../shared/constants/log-source.constant';
 import { SignalStore } from '../../core/state/signal-store';
+import { PlaybackMode } from '../../shared/models/playback.model';
+import { Logger } from '../../shared/utils/logger';
 
 @Component({
   selector: 'app-control-panel',
@@ -23,6 +27,7 @@ import { SignalStore } from '../../core/state/signal-store';
 export class ControlPanelComponent {
   private readonly store = inject(SignalStore);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly logger = new Logger(LogSource.ControlPanelComponent);
 
   private readonly track = viewChild.required<ElementRef<HTMLDivElement>>('track');
   private readonly draggingPointerId = signal<number | null>(null);
@@ -47,7 +52,9 @@ export class ControlPanelComponent {
     const start = this.windowStart();
     const end = this.windowEnd();
     const span = end - start;
-    if (span <= 0) return 100;
+    if (span <= 0) {
+      return 100;
+    }
 
     const ratio = (this.cursor() - start) / span;
     return Math.max(0, Math.min(100, ratio * 100));
@@ -63,6 +70,18 @@ export class ControlPanelComponent {
 
   constructor() {
     this.destroyRef.onDestroy(() => this.dragTeardown?.());
+    this.logModeTransitions();
+  }
+
+  private logModeTransitions(): void {
+    let previous: PlaybackMode | null = null;
+    effect(() => {
+      const current = this.mode();
+      if (previous !== null && previous !== current) {
+        this.logger.info(`mode: ${previous} → ${current}`);
+      }
+      previous = current;
+    });
   }
 
   protected toggleTransport(): void {
@@ -79,13 +98,23 @@ export class ControlPanelComponent {
 
   protected onTrackPointerDown(event: PointerEvent): void {
     const trackEl = this.track().nativeElement;
-    trackEl.setPointerCapture(event.pointerId);
+    // setPointerCapture can throw InvalidPointerId when the pointer is
+    // already released (fast tap + release before this handler runs).
+    // Capture is best-effort: if it fails we still register the drag
+    // listeners, just without explicit capture.
+    try {
+      trackEl.setPointerCapture(event.pointerId);
+    } catch {
+      // expected for stale pointers; nothing to recover
+    }
     this.draggingPointerId.set(event.pointerId);
 
     this.seekFromPointer(event);
 
     const onMove = (e: PointerEvent) => {
-      if (e.pointerId !== this.draggingPointerId()) return;
+      if (e.pointerId !== this.draggingPointerId()) {
+        return;
+      }
       this.seekFromPointer(e);
     };
 
@@ -97,8 +126,14 @@ export class ControlPanelComponent {
     };
 
     const onEnd = (e: PointerEvent) => {
-      if (e.pointerId !== this.draggingPointerId()) return;
-      trackEl.releasePointerCapture(e.pointerId);
+      if (e.pointerId !== this.draggingPointerId()) {
+        return;
+      }
+      try {
+        trackEl.releasePointerCapture(e.pointerId);
+      } catch {
+        // expected if capture was never established or already released
+      }
       teardown();
       this.draggingPointerId.set(null);
     };
@@ -113,7 +148,9 @@ export class ControlPanelComponent {
   private seekFromPointer(event: PointerEvent): void {
     const trackEl = this.track().nativeElement;
     const rect = trackEl.getBoundingClientRect();
-    if (rect.width === 0) return;
+    if (rect.width === 0) {
+      return;
+    }
 
     const ratio = (event.clientX - rect.left) / rect.width;
     const clampedRatio = Math.max(0, Math.min(1, ratio));
