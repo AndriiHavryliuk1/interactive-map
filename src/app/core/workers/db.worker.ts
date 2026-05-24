@@ -5,29 +5,15 @@ import { Logger } from '../../shared/utils/logger';
 import { SignalRepository } from '../db/signal-repository';
 import { SignalStorage } from '../interfaces/signal-storage.interface';
 import { WorkerHost } from '../interfaces/worker-host.interface';
-import {
-  ControlCommand,
-  StateFrame,
-  isChannelNewSignal,
-} from '../../shared/models/worker.model';
-import {
-  ControlMessageType,
-  FrameMessageType,
-} from '../../shared/constants/worker.constants';
+import { ControlCommand, StateFrame, isChannelNewSignal } from '../../shared/models/worker.model';
+import { ControlMessageType, FrameMessageType } from '../../shared/constants/worker.constants';
 import { PlaybackEngine } from './playback-engine';
 
 export interface DbWorkerSetupDeps {
-  /** Override the storage opener — tests pass an in-memory fake. */
   openStorage?: () => Promise<SignalStorage>;
   logger?: Logger;
 }
 
-/**
- * Wire the DB worker's message dispatch + lifecycle onto a host. Exported
- * so the wiring (race fix + dispose-during-init guard) is unit-testable
- * with a mock host; called at module-load time in real workers via the
- * guard below.
- */
 export function setupDbWorker(host: WorkerHost, deps: DbWorkerSetupDeps = {}): void {
   const logger = deps.logger ?? new Logger(LogSource.DBWorker);
   const openStorage = deps.openStorage ?? (() => SignalRepository.open());
@@ -86,10 +72,14 @@ export function setupDbWorker(host: WorkerHost, deps: DbWorkerSetupDeps = {}): v
    * exist). Whichever path runs second installs the handler.
    */
   function wireNetworkPort(): void {
-    if (engine === null || networkPort === null) return;
+    if (engine === null || networkPort === null) {
+      return;
+    }
     const enginePtr = engine;
     networkPort.onmessage = (e) => {
-      if (disposed) return;
+      if (disposed) {
+        return;
+      }
       if (isChannelNewSignal(e.data)) {
         enginePtr.ingestNewSignal(e.data.payload);
       } else {
@@ -110,10 +100,6 @@ export function setupDbWorker(host: WorkerHost, deps: DbWorkerSetupDeps = {}): v
   }
 }
 
-// Production wiring: fires when the file is loaded as a real Worker
-// (`new Worker(new URL('./db.worker.ts', ...))`). The check short-circuits
-// in jsdom / Node, where `WorkerGlobalScope` isn't defined, so importing
-// this file in tests has no side effects.
 declare const WorkerGlobalScope: { prototype: object } | undefined;
 if (typeof WorkerGlobalScope !== 'undefined') {
   setupDbWorker(self as unknown as WorkerHost);

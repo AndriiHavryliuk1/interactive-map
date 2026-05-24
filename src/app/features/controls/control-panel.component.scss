@@ -22,13 +22,17 @@
   background: var(--color-accent);
   color: var(--color-on-accent);
 
-  &:hover { background: var(--color-accent-soft); }
+  &:hover {
+    background: var(--color-accent-soft);
+  }
 
   &.is-playing {
     background: var(--color-warn);
     color: var(--color-on-warn);
 
-    &:hover { background: var(--color-warn-soft); }
+    &:hover {
+      background: var(--color-warn-soft);
+    }
   }
 }
 
@@ -73,7 +77,9 @@
   border-radius: var(--radius-full);
   transform: translate(-50%, -50%);
   box-shadow: var(--shadow-accent-glow);
-  transition: width var(--transition-fast), height var(--transition-fast);
+  transition:
+    width var(--transition-fast),
+    height var(--transition-fast);
   pointer-events: none;
 
   &.is-dragging {
@@ -81,7 +87,9 @@
     height: var(--space-5);
   }
 
-  &:focus-visible { @include m.focus-ring; }
+  &:focus-visible {
+    @include m.focus-ring;
+  }
 }
 
 .ticks {
@@ -130,6 +138,11 @@
 }
 
 @keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50%      { opacity: 0.4; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
 }

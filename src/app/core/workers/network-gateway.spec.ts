@@ -1,9 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import {
-  INITIAL_RECONNECT_DELAY_MS,
-  MAX_RECONNECT_DELAY_MS,
-} from '../constants/gateway.constants';
+import { INITIAL_RECONNECT_DELAY_MS, MAX_RECONNECT_DELAY_MS } from '../constants/gateway.constants';
 import { ChannelMessageType } from '../../shared/constants/worker.constants';
 import { NetworkGateway } from './network-gateway';
 
@@ -98,9 +95,7 @@ describe('NetworkGateway', () => {
       const payload = { timestamp: 1, frequency: 100, point: { lat: 0, lon: 0 }, zone: [] };
       sockets[0].emitMessage(JSON.stringify(payload));
 
-      expect(port.posted).toEqual([
-        { type: ChannelMessageType.NewSignal, payload },
-      ]);
+      expect(port.posted).toEqual([{ type: ChannelMessageType.NewSignal, payload }]);
     });
 
     it('drops malformed JSON silently (next valid frame still forwards)', () => {
@@ -123,8 +118,9 @@ describe('NetworkGateway', () => {
       const port = new FakePort();
       gateway.attachPort(port as unknown as MessagePort);
       gateway.dispose();
-      expect(() => sockets[0].emitMessage('{"timestamp":1,"frequency":1,"point":{"lat":0,"lon":0},"zone":[]}'))
-        .not.toThrow();
+      expect(() =>
+        sockets[0].emitMessage('{"timestamp":1,"frequency":1,"point":{"lat":0,"lon":0},"zone":[]}'),
+      ).not.toThrow();
     });
   });
 

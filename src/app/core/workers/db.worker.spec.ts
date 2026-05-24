@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { ChannelMessageType, FrameMessageType } from '../../shared/constants/worker.constants';
 import { PLAYBACK_TICK_MS } from '../../shared/constants/time.constants';
@@ -29,8 +29,11 @@ class FakeStorage implements SignalStorage {
   async save(signals: readonly RadarSignal[]): Promise<void> {
     for (const s of signals) {
       const existing = this.signals.findIndex((x) => x.id === s.id);
-      if (existing >= 0) this.signals[existing] = s;
-      else this.signals.push(s);
+      if (existing >= 0) {
+        this.signals[existing] = s;
+      } else {
+        this.signals.push(s);
+      }
     }
   }
   async getInRange(start: number, end: number): Promise<RadarSignal[]> {
@@ -108,7 +111,9 @@ describe('setupDbWorker', () => {
 
       const frame = host.posted.find(
         (m): m is { type: string; payload: unknown } =>
-          typeof m === 'object' && m !== null && (m as { type?: unknown }).type === FrameMessageType.Frame,
+          typeof m === 'object' &&
+          m !== null &&
+          (m as { type?: unknown }).type === FrameMessageType.Frame,
       );
       expect(frame).toBeDefined();
     });
@@ -151,7 +156,7 @@ describe('setupDbWorker', () => {
 
       // We can't reuse `storage` (we discarded it in boot for the deferred case),
       // so just verify the port handler exists and didn't throw.
-      void storage; // eslint-disable-line @typescript-eslint/no-unused-expressions
+      void storage;
     });
 
     it('warns on unrecognized channel messages without crashing', async () => {
@@ -199,7 +204,10 @@ describe('setupDbWorker', () => {
       const host = new FakeHost();
       let resolveOpen2!: (s: SignalStorage) => void;
       setupDbWorker(host, {
-        openStorage: () => new Promise<SignalStorage>((res) => { resolveOpen2 = res; }),
+        openStorage: () =>
+          new Promise<SignalStorage>((res) => {
+            resolveOpen2 = res;
+          }),
       });
       host.send({ type: 'DISPOSE' });
       resolveOpen2(newStorage);

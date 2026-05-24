@@ -93,6 +93,9 @@
           "src/**/*.spec.ts"
         ]
       }
+    },
+    "lint": {
+      "executor": "@nx/eslint:lint"
     }
   }
 }

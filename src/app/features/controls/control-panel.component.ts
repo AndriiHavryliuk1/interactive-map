@@ -52,7 +52,9 @@ export class ControlPanelComponent {
     const start = this.windowStart();
     const end = this.windowEnd();
     const span = end - start;
-    if (span <= 0) return 100;
+    if (span <= 0) {
+      return 100;
+    }
 
     const ratio = (this.cursor() - start) / span;
     return Math.max(0, Math.min(100, ratio * 100));
@@ -71,10 +73,6 @@ export class ControlPanelComponent {
     this.logModeTransitions();
   }
 
-  /**
-   * Log every transition in `mode`. The first effect run only captures the
-   * initial value as the baseline — no log fires until the next change.
-   */
   private logModeTransitions(): void {
     let previous: PlaybackMode | null = null;
     effect(() => {
@@ -114,7 +112,9 @@ export class ControlPanelComponent {
     this.seekFromPointer(event);
 
     const onMove = (e: PointerEvent) => {
-      if (e.pointerId !== this.draggingPointerId()) return;
+      if (e.pointerId !== this.draggingPointerId()) {
+        return;
+      }
       this.seekFromPointer(e);
     };
 
@@ -126,7 +126,9 @@ export class ControlPanelComponent {
     };
 
     const onEnd = (e: PointerEvent) => {
-      if (e.pointerId !== this.draggingPointerId()) return;
+      if (e.pointerId !== this.draggingPointerId()) {
+        return;
+      }
       try {
         trackEl.releasePointerCapture(e.pointerId);
       } catch {
@@ -146,7 +148,9 @@ export class ControlPanelComponent {
   private seekFromPointer(event: PointerEvent): void {
     const trackEl = this.track().nativeElement;
     const rect = trackEl.getBoundingClientRect();
-    if (rect.width === 0) return;
+    if (rect.width === 0) {
+      return;
+    }
 
     const ratio = (event.clientX - rect.left) / rect.width;
     const clampedRatio = Math.max(0, Math.min(1, ratio));

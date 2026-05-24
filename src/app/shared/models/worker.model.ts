@@ -19,9 +19,7 @@ export type DispatchableCommand =
   | { type: 'SEEK'; timestamp: number };
 
 /** Lifecycle commands handled by the worker entry point — never reach the engine. */
-export type LifecycleCommand =
-  | { type: 'INIT_PORTS'; port: MessagePort }
-  | { type: 'DISPOSE' };
+export type LifecycleCommand = { type: 'INIT_PORTS'; port: MessagePort } | { type: 'DISPOSE' };
 
 export type ControlCommand = DispatchableCommand | LifecycleCommand;
 

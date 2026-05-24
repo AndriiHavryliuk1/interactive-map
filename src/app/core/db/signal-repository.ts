@@ -32,8 +32,7 @@ export class SignalRepository implements SignalStorage {
         const db = (event.target as IDBOpenDBRequest).result;
         resolve(new SignalRepository(db));
       };
-      request.onerror = (event) =>
-        reject((event.target as IDBOpenDBRequest).error);
+      request.onerror = (event) => reject((event.target as IDBOpenDBRequest).error);
     });
   }
 
@@ -47,8 +46,7 @@ export class SignalRepository implements SignalStorage {
       }
 
       transaction.oncomplete = () => resolve();
-      transaction.onerror = (event) =>
-        reject((event.target as IDBTransaction).error);
+      transaction.onerror = (event) => reject((event.target as IDBTransaction).error);
     });
   }
 
@@ -60,10 +58,8 @@ export class SignalRepository implements SignalStorage {
       const range = IDBKeyRange.bound(start, end);
       const request = index.getAll(range);
 
-      request.onsuccess = (event) =>
-        resolve((event.target as IDBRequest<RadarSignal[]>).result);
-      request.onerror = (event) =>
-        reject((event.target as IDBRequest).error);
+      request.onsuccess = (event) => resolve((event.target as IDBRequest<RadarSignal[]>).result);
+      request.onerror = (event) => reject((event.target as IDBRequest).error);
     });
   }
 

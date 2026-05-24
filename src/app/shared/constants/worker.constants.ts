@@ -19,5 +19,4 @@ export const FrameMessageType = {
   Frame: 'FRAME',
 } as const;
 
-export type ControlMessageKind =
-  (typeof ControlMessageType)[keyof typeof ControlMessageType];
+export type ControlMessageKind = (typeof ControlMessageType)[keyof typeof ControlMessageType];

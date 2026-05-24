@@ -71,7 +71,10 @@ function frame(id: string, timestamp: number, opts: Partial<RadarSignal> = {}): 
     timestamp,
     frequency: opts.frequency ?? 100,
     point: opts.point ?? { lat: 50, lon: 30 },
-    zone: opts.zone ?? [{ lat: 50.001, lon: 30 }, { lat: 50.002, lon: 30.001 }],
+    zone: opts.zone ?? [
+      { lat: 50.001, lon: 30 },
+      { lat: 50.002, lon: 30.001 },
+    ],
   };
 }
 
@@ -96,10 +99,7 @@ function setUp(historical: RadarSignal[] = []): {
 
   TestBed.configureTestingModule({
     imports: [MapComponent],
-    providers: [
-      provideZonelessChangeDetection(),
-      { provide: SignalStore, useValue: mockStore },
-    ],
+    providers: [provideZonelessChangeDetection(), { provide: SignalStore, useValue: mockStore }],
   });
 
   const fixture = TestBed.createComponent(MapComponent);
@@ -179,7 +179,10 @@ describe('MapComponent', () => {
   });
 
   it('applies the FOCUSED zone style to every polygon in the current burst', () => {
-    const signals = [frame('1', NOW - 100, { frequency: 1 }), frame('2', NOW - 100, { frequency: 2 })];
+    const signals = [
+      frame('1', NOW - 100, { frequency: 1 }),
+      frame('2', NOW - 100, { frequency: 2 }),
+    ];
     const { store, fixture } = setUp(signals);
     store.burstAtCursor.set(signals);
     fixture.detectChanges();

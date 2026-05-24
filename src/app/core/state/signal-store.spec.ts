@@ -9,10 +9,10 @@ const NOW = 1_700_000_000_000;
 class MockWorker {
   postMessage = vi.fn();
   terminate = vi.fn();
-  onmessage: ((ev: MessageEvent) => any) | null = null;
-  onerror: ((ev: ErrorEvent) => any) | null = null;
+  onmessage: ((ev: MessageEvent) => unknown) | null = null;
+  onerror: ((ev: ErrorEvent) => unknown) | null = null;
 
-  simulateMessage(data: any) {
+  simulateMessage(data: unknown) {
     if (this.onmessage) {
       this.onmessage({ data } as MessageEvent);
     }
@@ -29,10 +29,11 @@ let workerConstructorCount = 0;
 vi.stubGlobal(
   'Worker',
   class {
-    constructor(public url: URL) {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    constructor(_url: URL) {
       const mock = workerConstructorCount === 0 ? networkWorkerMock : dbWorkerMock;
       workerConstructorCount++;
-      return mock as any;
+      return mock as unknown as Worker;
     }
   },
 );
@@ -88,7 +89,13 @@ describe('SignalStore', () => {
   describe('state updates from worker', () => {
     it('updates signals when the worker sends a FRAME', () => {
       const store = setUpStore();
-      const signal = { id: '1', timestamp: NOW, frequency: 100, point: { lat: 0, lon: 0 }, zone: [] };
+      const signal = {
+        id: '1',
+        timestamp: NOW,
+        frequency: 100,
+        point: { lat: 0, lon: 0 },
+        zone: [],
+      };
       const frame = makeFrame({
         addedSignals: [signal],
         burstAtCursor: [signal],

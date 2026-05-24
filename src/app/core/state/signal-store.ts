@@ -1,10 +1,4 @@
-import {
-  computed,
-  Injectable,
-  OnDestroy,
-  Signal,
-  signal,
-} from '@angular/core';
+import { computed, Injectable, OnDestroy, Signal, signal } from '@angular/core';
 
 import { HISTORY_WINDOW_MS } from '../../shared/constants/time.constants';
 import { LogSource } from '../../shared/constants/log-source.constant';
@@ -18,7 +12,9 @@ import {
   WORKER_TERMINATE_GRACE_MS,
 } from '../../shared/constants/worker.constants';
 
-@Injectable({ providedIn: 'root' })
+@Injectable({
+  providedIn: 'root',
+})
 export class SignalStore implements OnDestroy {
   private readonly _mode = signal<PlaybackMode>('live');
   private readonly _cursor = signal<number>(Date.now());
@@ -40,18 +36,12 @@ export class SignalStore implements OnDestroy {
   readonly windowEnd = this._now.asReadonly();
 
   constructor() {
-    // NOTE for refactors: construction order is load-bearing. signal-store.spec.ts
-    // disambiguates the two Worker mocks by the order of these two `new Worker`
-    // calls (the bundled URL no longer contains the original filename).
-    // Flipping these two lines silently inverts every assertion in that spec.
-    this.networkWorker = new Worker(
-      new URL('../workers/network.worker.ts', import.meta.url),
-      { type: 'module' },
-    );
-    this.dbWorker = new Worker(
-      new URL('../workers/db.worker.ts', import.meta.url),
-      { type: 'module' },
-    );
+    this.networkWorker = new Worker(new URL('../workers/network.worker.ts', import.meta.url), {
+      type: 'module',
+    });
+    this.dbWorker = new Worker(new URL('../workers/db.worker.ts', import.meta.url), {
+      type: 'module',
+    });
 
     this.networkWorker.onerror = (e) => this.logger.error('NetworkWorker error', e);
     this.dbWorker.onerror = (e) => this.logger.error('DBWorker error', e);
@@ -79,14 +69,6 @@ export class SignalStore implements OnDestroy {
     }, WORKER_TERMINATE_GRACE_MS);
   }
 
-  // Commands are pure forwarders — the worker is the single source of truth
-  // for mode/cursor. Optimistic local writes would dual-write state (with
-  // the worker's FRAME ~100ms later) and could flicker on auto-snap races
-  // (e.g. worker auto-snaps to live while user clicks Pause).
-  // The worker emits a FRAME synchronously after each command, so the
-  // round-trip is one event-loop tick — fast enough that buttons feel
-  // instant without local optimism.
-
   play(): void {
     this.sendCommand({ type: ControlMessageType.Play });
   }
@@ -104,7 +86,9 @@ export class SignalStore implements OnDestroy {
   }
 
   private onWorkerMessage(event: MessageEvent): void {
-    if (event.data?.type !== FrameMessageType.Frame) return;
+    if (event.data?.type !== FrameMessageType.Frame) {
+      return;
+    }
     const frame = event.data.payload as StateFrame;
 
     this._mode.set(frame.mode);
@@ -114,7 +98,9 @@ export class SignalStore implements OnDestroy {
 
     let changed = false;
     for (const id of frame.removedSignalIds) {
-      if (this._visibleSignalsMap.delete(id)) changed = true;
+      if (this._visibleSignalsMap.delete(id)) {
+        changed = true;
+      }
     }
     for (const radarSignal of frame.addedSignals) {
       this._visibleSignalsMap.set(radarSignal.id, radarSignal);

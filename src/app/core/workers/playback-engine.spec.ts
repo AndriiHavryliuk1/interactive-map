@@ -18,8 +18,11 @@ class FakeStorage implements SignalStorage {
     this.saveCalls++;
     for (const s of signals) {
       const existing = this.signals.findIndex((x) => x.id === s.id);
-      if (existing >= 0) this.signals[existing] = s;
-      else this.signals.push(s);
+      if (existing >= 0) {
+        this.signals[existing] = s;
+      } else {
+        this.signals.push(s);
+      }
     }
   }
 
@@ -45,10 +48,12 @@ function makeSignal(overrides: Partial<SignalMessage> = {}): SignalMessage {
   };
 }
 
-function makeEngine(opts: {
-  storage?: FakeStorage;
-  now?: () => number;
-} = {}) {
+function makeEngine(
+  opts: {
+    storage?: FakeStorage;
+    now?: () => number;
+  } = {},
+) {
   const storage = opts.storage ?? new FakeStorage();
   const frames: StateFrame[] = [];
   const engine = new PlaybackEngine({
@@ -184,7 +189,7 @@ describe('PlaybackEngine', () => {
       // both mutate lastVisibleIds against stale snapshots.
       const storage = new FakeStorage();
       const resolvers: Array<() => void> = [];
-      let originalGetInRange = storage.getInRange.bind(storage);
+      const originalGetInRange = storage.getInRange.bind(storage);
       storage.getInRange = (start: number, end: number) =>
         new Promise<RadarSignal[]>((resolve) => {
           const wrapped = async () => resolve(await originalGetInRange(start, end));

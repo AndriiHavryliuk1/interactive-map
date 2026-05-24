@@ -18,10 +18,7 @@ export interface NetworkWorkerSetupDeps {
  * wiring is unit-testable with a mock host; called at module-load time in
  * real workers via the guard below.
  */
-export function setupNetworkWorker(
-  host: WorkerHost,
-  deps: NetworkWorkerSetupDeps = {},
-): void {
+export function setupNetworkWorker(host: WorkerHost, deps: NetworkWorkerSetupDeps = {}): void {
   const logger = deps.logger ?? new Logger(LogSource.NetworkWorker);
   const gateway = deps.gateway ?? new NetworkGateway({ logger });
 
@@ -29,7 +26,9 @@ export function setupNetworkWorker(
     const command = event.data;
 
     if (command.type === ControlMessageType.InitPorts) {
-      if (event.ports.length > 0) gateway.attachPort(event.ports[0]);
+      if (event.ports.length > 0) {
+        gateway.attachPort(event.ports[0]);
+      }
       return;
     }
 

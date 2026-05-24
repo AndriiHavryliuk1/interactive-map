@@ -1,7 +1,3 @@
-/**
- * All recognized log sources. Centralized so `new Logger('Typo')` is a
- * type error and a `grep LogSource` lists every subsystem that emits logs.
- */
 export const LogSource = {
   SignalStore: 'SignalStore',
   PlaybackEngine: 'PlaybackEngine',

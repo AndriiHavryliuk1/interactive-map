@@ -22,7 +22,9 @@
   padding: var(--space-4) var(--space-5);
   border-bottom: 1px solid var(--color-border);
   gap: var(--space-2);
-  transition: padding 200ms ease, border-color 200ms ease;
+  transition:
+    padding 200ms ease,
+    border-color 200ms ease;
 
   h2 {
     @include m.eyebrow(var(--font-size-2xl));
@@ -50,8 +52,12 @@
   justify-content: center;
   transition: color var(--transition-fast);
 
-  &:hover { color: var(--color-text-primary); }
-  &:focus-visible { @include m.focus-ring; }
+  &:hover {
+    color: var(--color-text-primary);
+  }
+  &:focus-visible {
+    @include m.focus-ring;
+  }
 }
 
 .chevron {
@@ -59,7 +65,9 @@
   height: 18px;
   transition: transform 200ms ease;
 
-  &.is-flipped { transform: rotate(180deg); }
+  &.is-flipped {
+    transform: rotate(180deg);
+  }
 }
 
 .burst-badge,
@@ -84,8 +92,14 @@
   font-weight: var(--font-weight-bold);
   background: var(--color-surface-elevated);
 
-  &[data-mode='live']    { background: var(--color-danger); color: var(--color-on-danger); }
-  &[data-mode='playing'] { background: var(--color-warn);   color: var(--color-on-warn); }
+  &[data-mode='live'] {
+    background: var(--color-danger);
+    color: var(--color-on-danger);
+  }
+  &[data-mode='playing'] {
+    background: var(--color-warn);
+    color: var(--color-on-warn);
+  }
 }
 
 .signal-list {

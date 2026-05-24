@@ -42,13 +42,17 @@ export class NetworkGateway {
   }
 
   attachPort(port: MessagePort): void {
-    if (this.disposed) return;
+    if (this.disposed) {
+      return;
+    }
     this.dbPort = port;
     this.connect();
   }
 
   dispose(): void {
-    if (this.disposed) return;
+    if (this.disposed) {
+      return;
+    }
     this.disposed = true;
     this.cleanupSocket();
     if (this.dbPort !== null) {
@@ -58,37 +62,53 @@ export class NetworkGateway {
   }
 
   private connect(): void {
-    if (this.disposed) return;
+    if (this.disposed) {
+      return;
+    }
     this.cleanupSocket();
 
     const socket = this.socketFactory(this.url);
     this.socket = socket;
 
     socket.onopen = () => {
-      if (this.socket !== socket) return;
+      if (this.socket !== socket) {
+        return;
+      }
       this.reconnectAttempt = 0;
       this.logger.info('WebSocket connected');
     };
 
     socket.onmessage = (event) => {
-      if (this.socket !== socket) return;
+      if (this.socket !== socket) {
+        return;
+      }
       this.forwardMessage(event.data);
     };
 
     socket.onclose = () => {
-      if (this.socket !== socket) return;
-      if (!this.disposed) this.scheduleReconnect();
+      if (this.socket !== socket) {
+        return;
+      }
+      if (!this.disposed) {
+        this.scheduleReconnect();
+      }
     };
 
     socket.onerror = () => {
-      if (this.socket !== socket) return;
+      if (this.socket !== socket) {
+        return;
+      }
       this.logger.warn('WebSocket error — reconnect will follow close');
     };
   }
 
   private forwardMessage(raw: unknown): void {
-    if (this.dbPort === null) return;
-    if (typeof raw !== 'string') return;
+    if (this.dbPort === null) {
+      return;
+    }
+    if (typeof raw !== 'string') {
+      return;
+    }
     let parsed: SignalMessage;
     try {
       parsed = JSON.parse(raw) as SignalMessage;
@@ -103,13 +123,17 @@ export class NetworkGateway {
   }
 
   private scheduleReconnect(): void {
-    if (this.disposed) return;
+    if (this.disposed) {
+      return;
+    }
     const delay = Math.min(
       MAX_RECONNECT_DELAY_MS,
       INITIAL_RECONNECT_DELAY_MS * RECONNECT_BACKOFF_BASE ** this.reconnectAttempt,
     );
     this.reconnectAttempt++;
-    if (this.reconnectHandle !== null) clearTimeout(this.reconnectHandle);
+    if (this.reconnectHandle !== null) {
+      clearTimeout(this.reconnectHandle);
+    }
     this.reconnectHandle = setTimeout(() => this.connect(), delay);
   }
 

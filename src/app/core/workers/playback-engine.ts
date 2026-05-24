@@ -75,13 +75,17 @@ export class PlaybackEngine {
   }
 
   start(): void {
-    if (this.disposed) return;
+    if (this.disposed) {
+      return;
+    }
     this.scheduleNextTick();
     this.scheduleNextFlush();
   }
 
   private scheduleNextTick(): void {
-    if (this.disposed) return;
+    if (this.disposed) {
+      return;
+    }
     this.clockHandle = setTimeout(async () => {
       this.clockHandle = null;
       await this.tick();
@@ -90,7 +94,9 @@ export class PlaybackEngine {
   }
 
   private scheduleNextFlush(): void {
-    if (this.disposed) return;
+    if (this.disposed) {
+      return;
+    }
     this.batchHandle = setTimeout(async () => {
       this.batchHandle = null;
       await this.flushBuffer();
@@ -99,7 +105,9 @@ export class PlaybackEngine {
   }
 
   dispatch(command: DispatchableCommand): void {
-    if (this.disposed) return;
+    if (this.disposed) {
+      return;
+    }
     const handler = this.commandHandlers.get(command.type);
     if (!handler) {
       this.logger.warn('Unhandled command', command);
@@ -113,7 +121,9 @@ export class PlaybackEngine {
   }
 
   ingestNewSignal(message: SignalMessage): void {
-    if (this.disposed) return;
+    if (this.disposed) {
+      return;
+    }
     this.buffer.push({
       // Content-derived id: same logical signal → same id → IDB dedups by
       // keyPath. Survives reconnects (where the server re-sends backfill)
@@ -133,7 +143,9 @@ export class PlaybackEngine {
   }
 
   dispose(): void {
-    if (this.disposed) return;
+    if (this.disposed) {
+      return;
+    }
     this.disposed = true;
     if (this.clockHandle !== null) {
       clearTimeout(this.clockHandle);
@@ -147,12 +159,16 @@ export class PlaybackEngine {
   }
 
   private handlePlay(): void {
-    if (this.mode === 'live') this.cursorOverride = this.now();
+    if (this.mode === 'live') {
+      this.cursorOverride = this.now();
+    }
     this.mode = 'playing';
   }
 
   private handlePause(): void {
-    if (this.mode === 'live') this.cursorOverride = this.now();
+    if (this.mode === 'live') {
+      this.cursorOverride = this.now();
+    }
     this.mode = 'paused';
   }
 
@@ -162,14 +178,20 @@ export class PlaybackEngine {
   }
 
   private handleSeek(command: DispatchableCommand): void {
-    if (command.type !== ControlMessageType.Seek) return;
+    if (command.type !== ControlMessageType.Seek) {
+      return;
+    }
     const wallNow = this.now();
     this.cursorOverride = clamp(command.timestamp, wallNow - HISTORY_WINDOW_MS, wallNow);
-    if (this.mode === 'live') this.mode = 'paused';
+    if (this.mode === 'live') {
+      this.mode = 'paused';
+    }
   }
 
   private async flushBuffer(): Promise<void> {
-    if (this.disposed || this.buffer.length === 0) return;
+    if (this.disposed || this.buffer.length === 0) {
+      return;
+    }
     const toSave = this.buffer;
     this.buffer = [];
     try {
@@ -180,7 +202,9 @@ export class PlaybackEngine {
   }
 
   private async tick(): Promise<void> {
-    if (this.disposed) return;
+    if (this.disposed) {
+      return;
+    }
 
     // Apply the per-tick playback advance synchronously, then defer to
     // emitFrame() for the IDB-bound work.
@@ -217,20 +241,22 @@ export class PlaybackEngine {
     // throw, and the dispatch path uses `void emitFrame()` so a rejection
     // would surface as unhandled.
     try {
-      if (this.disposed) return;
+      if (this.disposed) {
+        return;
+      }
 
       const wallNow = this.now();
       const modeSnapshot = this.mode;
       const cursor =
-        modeSnapshot === 'live' || this.cursorOverride === null
-          ? wallNow
-          : this.cursorOverride;
+        modeSnapshot === 'live' || this.cursorOverride === null ? wallNow : this.cursorOverride;
 
       const windowStart = cursor - SIGNAL_VISIBLE_DURATION_MS;
       const windowEnd = cursor + SIGNAL_VISIBLE_DURATION_MS;
 
       const signals = await this.repository.getInRange(windowStart, windowEnd);
-      if (this.disposed) return;
+      if (this.disposed) {
+        return;
+      }
 
       const visibleSignals = signals.filter(
         (s) => s.timestamp >= cursor - SIGNAL_VISIBLE_DURATION_MS && s.timestamp <= cursor,
@@ -258,7 +284,9 @@ export class PlaybackEngine {
   }
 
   private computeBurstAtCursor(signals: RadarSignal[], cursor: number): RadarSignal[] {
-    if (signals.length === 0) return [];
+    if (signals.length === 0) {
+      return [];
+    }
 
     let closest = signals[0];
     let minDiff = Math.abs(signals[0].timestamp - cursor);
@@ -271,7 +299,9 @@ export class PlaybackEngine {
         closest = candidate;
       }
     }
-    if (minDiff > SIGNAL_VISIBLE_DURATION_MS) return [];
+    if (minDiff > SIGNAL_VISIBLE_DURATION_MS) {
+      return [];
+    }
     return signals.filter((s) => s.timestamp === closest.timestamp);
   }
 }

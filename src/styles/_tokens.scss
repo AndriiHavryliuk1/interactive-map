@@ -8,29 +8,29 @@
 :root {
   // -------- color ----------------------------------------------------
   // Surfaces (dark mode by default)
-  --color-bg:               #0b1220;
-  --color-surface:          #0f172a;
+  --color-bg: #0b1220;
+  --color-surface: #0f172a;
   --color-surface-elevated: #1e293b;
-  --color-border:           #1e293b;
+  --color-border: #1e293b;
 
   // Foreground
-  --color-text-primary:     #f1f5f9;
-  --color-text-default:     #e2e8f0;
-  --color-text-faint:       #cbd5f5;
-  --color-text-muted:       #94a3b8;
-  --color-text-subtle:      #64748b;
+  --color-text-primary: #f1f5f9;
+  --color-text-default: #e2e8f0;
+  --color-text-faint: #cbd5f5;
+  --color-text-muted: #94a3b8;
+  --color-text-subtle: #64748b;
 
   // Accents (paired with on-* tokens for contrast)
-  --color-accent:           #38bdf8;
-  --color-accent-soft:      #7dd3fc;
-  --color-accent-strong:    #818cf8;
-  --color-warn:             #f97316;
-  --color-warn-soft:        #fb923c;
-  --color-danger:           #ef4444;
+  --color-accent: #38bdf8;
+  --color-accent-soft: #7dd3fc;
+  --color-accent-strong: #818cf8;
+  --color-warn: #f97316;
+  --color-warn-soft: #fb923c;
+  --color-danger: #ef4444;
 
-  --color-on-accent:        #0b1220;
-  --color-on-warn:          #ffffff;
-  --color-on-danger:        #ffffff;
+  --color-on-accent: #0b1220;
+  --color-on-warn: #ffffff;
+  --color-on-danger: #ffffff;
 
   // -------- spacing (4-px scale) -------------------------------------
   --space-1: 0.25rem;
@@ -41,26 +41,26 @@
   --space-6: 1.5rem;
 
   // -------- radius ---------------------------------------------------
-  --radius-sm:   0.5rem;
-  --radius-md:   0.75rem;
+  --radius-sm: 0.5rem;
+  --radius-md: 0.75rem;
   --radius-pill: 9999px;
   --radius-full: 50%;
 
   // -------- typography ----------------------------------------------
   --font-family-sans: 'Segoe UI', system-ui, -apple-system, sans-serif;
 
-  --font-size-xs:   0.6875rem;
-  --font-size-sm:   0.75rem;
-  --font-size-md:   0.8125rem;
-  --font-size-lg:   0.875rem;
-  --font-size-xl:   0.9375rem;
-  --font-size-2xl:  1rem;
+  --font-size-xs: 0.6875rem;
+  --font-size-sm: 0.75rem;
+  --font-size-md: 0.8125rem;
+  --font-size-lg: 0.875rem;
+  --font-size-xl: 0.9375rem;
+  --font-size-2xl: 1rem;
 
-  --font-weight-medium:   500;
+  --font-weight-medium: 500;
   --font-weight-semibold: 600;
-  --font-weight-bold:     700;
+  --font-weight-bold: 700;
 
-  --letter-spacing-wide:  0.05em;
+  --letter-spacing-wide: 0.05em;
   --letter-spacing-wider: 0.1em;
 
   // -------- motion --------------------------------------------------

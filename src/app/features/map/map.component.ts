@@ -33,7 +33,7 @@ interface RenderedSignal {
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './map.component.html',
   styleUrl: './map.component.scss',
-  providers: [DatePipe]
+  providers: [DatePipe],
 })
 export class MapComponent {
   private readonly store = inject(SignalStore);
@@ -92,10 +92,14 @@ export class MapComponent {
   }
 
   private syncLayersToMap(): void {
-    if (!this.mapReady() || !this.map) return;
-    
+    if (!this.mapReady() || !this.map) {
+      return;
+    }
+
     const currentSignals = this.store.visibleSignals();
-    if (currentSignals === this.lastProcessedSignals) return;
+    if (currentSignals === this.lastProcessedSignals) {
+      return;
+    }
 
     const map = this.map;
     const currentIds = new Map(currentSignals.map((s) => [s.id, s]));
@@ -148,7 +152,9 @@ export class MapComponent {
 
   private syncHighlightToStore(): void {
     effect(() => {
-      if (!this.mapReady() || !this.map) return;
+      if (!this.mapReady() || !this.map) {
+        return;
+      }
 
       const nextIds = new Set(this.store.burstAtCursor().map((s) => s.id));
 
@@ -156,7 +162,9 @@ export class MapComponent {
       // detached can throw. We log and continue rather than letting one bad
       // layer kill the highlight transition for the rest of the burst.
       for (const id of this.highlightedIds) {
-        if (nextIds.has(id)) continue;
+        if (nextIds.has(id)) {
+          continue;
+        }
         try {
           this.renderedLayers.get(id)?.polygon?.setStyle(ZONE_STYLE_IDLE);
         } catch (err) {
@@ -164,7 +172,9 @@ export class MapComponent {
         }
       }
       for (const id of nextIds) {
-        if (this.highlightedIds.has(id)) continue;
+        if (this.highlightedIds.has(id)) {
+          continue;
+        }
         try {
           this.renderedLayers.get(id)?.polygon?.setStyle(ZONE_STYLE_FOCUSED);
         } catch (err) {

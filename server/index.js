@@ -1,6 +1,6 @@
 // Minimal local WebSocket "radar" server.
 // Each tick emits a 1..10-signal burst with a shared timestamp, then
-// schedules the next tick 0.3-3.3s later. Run with `npm run server`.
+// schedules the next tick 3-30ms later. Run with `npm run server`.
 
 const { WebSocketServer } = require('ws');
 
@@ -55,12 +55,6 @@ function pickBurstSize() {
   return size;
 }
 
-// Pre-generate backfill once at startup and cache. Two reasons:
-//   1. Stable across reconnects/refreshes — the client's content-derived id
-//      dedups in IDB instead of accumulating duplicate rows with the same
-//      logical signals.
-//   2. Cheap to re-send: just an array of pre-stringified payloads.
-// Restart the server to get a fresh history window.
 const BACKFILL_PAYLOADS = buildBackfillPayloads();
 const BACKFILL_CHUNK_SIZE = 50;
 
